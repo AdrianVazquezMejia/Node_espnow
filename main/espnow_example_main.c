@@ -77,6 +77,8 @@ static xQueueHandle espnow_queue;
 
 static QueueHandle_t uart1_queue;
 
+static xQueueHandle testQueue;
+
 static uint8_t s_example_broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
@@ -455,30 +457,35 @@ void UARTinit(void) {
     uart_param_config(UART_NUM_1, &uart_config);
     uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2,  TX_BUF_SIZE * 2,  20, &uart1_queue, 0);
+
+    //Create a queue for TX test
+    testQueue = xQueueCreate(RX_BUF_SIZE, 1);
 }
 
 int sendData(const char* logName, const char* data)
 {
-    const int len = lFrameR;
-    const int txBytes = uart_write_bytes(UART_NUM_1, &frameR, len);
+    const int len = sizeof(data);
+    const int txBytes = uart_write_bytes(UART_NUM_1, data, len);
     ESP_LOGI(logName, "Wrote %d bytes", txBytes);
     return txBytes;
 }
 
 static void tx_task(void *arg)
 {
+	uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
     static const char *TX_TASK_TAG = "TX_TASK";
     esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
     while (1) {
+    	if(xQueueReceive(testQueue,dtmp, (portTickType)portMAX_DELAY)){
         sendData(TX_TASK_TAG, "Hello world");
         vTaskDelay(200 / portTICK_PERIOD_MS);
+    	}
     }
 }
 
 static void rx_task(void *arg)
 {
     uart_event_t event;
-    size_t buffered_size;
     uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
     static const char *RX_TASK_TAG = "RX_TASK";
     esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
@@ -493,6 +500,7 @@ static void rx_task(void *arg)
                     ESP_LOGI(RX_TASK_TAG, "[UART DATA]: %d", event.size);
                     uart_read_bytes(UART_NUM_1, dtmp, event.size, portMAX_DELAY);
                     ESP_LOGI(RX_TASK_TAG, "[DATA EVT]:");
+                    xQueueSend(testQueue,dtmp,(portTickType)portMAX_DELAY);
                     //uart_write_bytes(UART_NUM_1, (const char*) dtmp, event.size);
                     break;
                 //Event of HW FIFO overflow detected
