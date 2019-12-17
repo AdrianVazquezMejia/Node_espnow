@@ -1,0 +1,10 @@
+build/
+*.log
+*.o
+*/bin/*
+bin
+*.a
+*.old
+*.projbuild
+
+
