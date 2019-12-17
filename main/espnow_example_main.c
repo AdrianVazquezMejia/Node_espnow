@@ -56,8 +56,6 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "rom/ets_sys.h"
 #include "rom/crc.h"
 #include "espnow_example.h"
-//#include "frame.h"
-//UART's includes
 #include "freertos/task.h"
 #include "driver/uart.h"
 #include "soc/uart_struct.h"
@@ -66,14 +64,18 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 
 
 static const int RX_BUF_SIZE = 1024;
+static const int TX_BUF_SIZE = 1024;
 
 
 #define TXD_PIN (GPIO_NUM_4)
 #define RXD_PIN (GPIO_NUM_5)
 
 static const char *TAG = "espnow_example";
+ //Queue definitions
 
 static xQueueHandle espnow_queue;
+
+static QueueHandle_t uart1_queue;
 
 static uint8_t s_example_broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
@@ -442,7 +444,7 @@ static void example_espnow_deinit(example_espnow_send_param_t *send_param)
     esp_now_deinit();
 }
 
-void init(void) {
+void UARTinit(void) {
     const uart_config_t uart_config = {
         .baud_rate = 115200,
         .data_bits = UART_DATA_8_BITS,
@@ -452,8 +454,7 @@ void init(void) {
     };
     uart_param_config(UART_NUM_1, &uart_config);
     uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-    // We won't use a buffer for sending data.
-    uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2,  TX_BUF_SIZE * 2,  20, &uart1_queue, 0);
 }
 
 int sendData(const char* logName, const char* data)
@@ -476,28 +477,63 @@ static void tx_task(void *arg)
 
 static void rx_task(void *arg)
 {
-    static const char *RX_TASK_TAG = "RX_TASK";
-    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
-    //uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE+1);
-    uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE+1);
-    while (1) {
-
-        const int rxBytes = uart_read_bytes(UART_NUM_1, data, RX_BUF_SIZE, 200 / portTICK_RATE_MS);
-
-        if (rxBytes > 0) {
-            data[rxBytes] = 0;
-            memset(frame,0,sizeof(frame));
-            memcpy(frame,data,rxBytes);
-            lFrame = rxBytes;
-            ESP_LOGI(RX_TASK_TAG, "%d", rxBytes);
-
-            //ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
+    uart_event_t event;
+    size_t buffered_size;
+    uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
+    for(;;) {
+        //Waiting for UART event.
+        if(xQueueReceive(uart1_queue, (void * )&event, (portTickType)portMAX_DELAY)) {
+            bzero(dtmp, RX_BUF_SIZE);
+            ESP_LOGI(TAG, "uart[%d] event:", UART_NUM_1);
+            switch(event.type) {
+                //Event of UART receving data
+                case UART_DATA:
+                    ESP_LOGI(TAG, "[UART DATA]: %d", event.size);
+                    uart_read_bytes(UART_NUM_1, dtmp, event.size, portMAX_DELAY);
+                    ESP_LOGI(TAG, "[DATA EVT]:");
+                    uart_write_bytes(UART_NUM_1, (const char*) dtmp, event.size);
+                    break;
+                //Event of HW FIFO overflow detected
+                case UART_FIFO_OVF:
+                    ESP_LOGI(TAG, "hw fifo overflow");
+                    // If fifo overflow happened, you should consider adding flow control for your application.
+                    // The ISR has already reset the rx FIFO,
+                    // As an example, we directly flush the rx buffer here in order to read more data.
+                    uart_flush_input(UART_NUM_1);
+                    xQueueReset(uart1_queue);
+                    break;
+                //Event of UART ring buffer full
+                case UART_BUFFER_FULL:
+                    ESP_LOGI(TAG, "ring buffer full");
+                    // If buffer full happened, you should consider encreasing your buffer size
+                    // As an example, we directly flush the rx buffer here in order to read more data.
+                    uart_flush_input(UART_NUM_1);
+                    xQueueReset(uart1_queue);
+                    break;
+                //Event of UART RX break detected
+                case UART_BREAK:
+                    ESP_LOGI(TAG, "uart rx break");
+                    break;
+                //Event of UART parity check error
+                case UART_PARITY_ERR:
+                    ESP_LOGI(TAG, "uart parity error");
+                    break;
+                //Event of UART frame error
+                case UART_FRAME_ERR:
+                    ESP_LOGI(TAG, "uart frame error");
+                    break;
+                //Others
+                default:
+                    ESP_LOGI(TAG, "uart event type: %d", event.type);
+                    break;
+            }
         }
-
     }
-
-    free(data);
+    free(dtmp);
+    dtmp = NULL;
+    vTaskDelete(NULL);
 }
+
 
 
 void app_main()
@@ -510,11 +546,11 @@ void app_main()
     }
     ESP_ERROR_CHECK( ret );
 
-    init();
+    UARTinit();
     xTaskCreate(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
     xTaskCreate(tx_task, "uart_tx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL);
 
-    example_wifi_init();
-    example_espnow_init();
+    //example_wifi_init(); XXX
+    //example_espnow_init();XXX
 
 }
