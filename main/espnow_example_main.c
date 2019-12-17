@@ -480,22 +480,24 @@ static void rx_task(void *arg)
     uart_event_t event;
     size_t buffered_size;
     uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
+    static const char *RX_TASK_TAG = "RX_TASK";
+    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
     for(;;) {
         //Waiting for UART event.
         if(xQueueReceive(uart1_queue, (void * )&event, (portTickType)portMAX_DELAY)) {
             bzero(dtmp, RX_BUF_SIZE);
-            ESP_LOGI(TAG, "uart[%d] event:", UART_NUM_1);
+            ESP_LOGI(RX_TASK_TAG, "uart[%d] event:", UART_NUM_1);
             switch(event.type) {
                 //Event of UART receving data
                 case UART_DATA:
-                    ESP_LOGI(TAG, "[UART DATA]: %d", event.size);
+                    ESP_LOGI(RX_TASK_TAG, "[UART DATA]: %d", event.size);
                     uart_read_bytes(UART_NUM_1, dtmp, event.size, portMAX_DELAY);
-                    ESP_LOGI(TAG, "[DATA EVT]:");
-                    uart_write_bytes(UART_NUM_1, (const char*) dtmp, event.size);
+                    ESP_LOGI(RX_TASK_TAG, "[DATA EVT]:");
+                    //uart_write_bytes(UART_NUM_1, (const char*) dtmp, event.size);
                     break;
                 //Event of HW FIFO overflow detected
                 case UART_FIFO_OVF:
-                    ESP_LOGI(TAG, "hw fifo overflow");
+                    ESP_LOGI(RX_TASK_TAG, "hw fifo overflow");
                     // If fifo overflow happened, you should consider adding flow control for your application.
                     // The ISR has already reset the rx FIFO,
                     // As an example, we directly flush the rx buffer here in order to read more data.
@@ -504,7 +506,7 @@ static void rx_task(void *arg)
                     break;
                 //Event of UART ring buffer full
                 case UART_BUFFER_FULL:
-                    ESP_LOGI(TAG, "ring buffer full");
+                    ESP_LOGI(RX_TASK_TAG, "ring buffer full");
                     // If buffer full happened, you should consider encreasing your buffer size
                     // As an example, we directly flush the rx buffer here in order to read more data.
                     uart_flush_input(UART_NUM_1);
@@ -512,19 +514,19 @@ static void rx_task(void *arg)
                     break;
                 //Event of UART RX break detected
                 case UART_BREAK:
-                    ESP_LOGI(TAG, "uart rx break");
+                    ESP_LOGI(RX_TASK_TAG, "uart rx break");
                     break;
                 //Event of UART parity check error
                 case UART_PARITY_ERR:
-                    ESP_LOGI(TAG, "uart parity error");
+                    ESP_LOGI(RX_TASK_TAG, "uart parity error");
                     break;
                 //Event of UART frame error
                 case UART_FRAME_ERR:
-                    ESP_LOGI(TAG, "uart frame error");
+                    ESP_LOGI(RX_TASK_TAG, "uart frame error");
                     break;
                 //Others
                 default:
-                    ESP_LOGI(TAG, "uart event type: %d", event.type);
+                    ESP_LOGI(RX_TASK_TAG, "uart event type: %d", event.type);
                     break;
             }
         }
@@ -545,7 +547,7 @@ void app_main()
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK( ret );
-
+    esp_log_level_set(TAG, ESP_LOG_INFO);
     UARTinit();
     xTaskCreate(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
     xTaskCreate(tx_task, "uart_tx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL);
