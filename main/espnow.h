@@ -21,38 +21,38 @@
 
 #define ESPNOW_QUEUE_SIZE           6
 
-#define IS_BROADCAST_ADDR(addr) (memcmp(addr, s_example_broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
+#define IS_BROADCAST_ADDR(addr) (memcmp(addr, broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
 
 typedef enum {
     EXAMPLE_ESPNOW_SEND_CB,
     EXAMPLE_ESPNOW_RECV_CB,
-} example_espnow_event_id_t;
+} espnow_event_id_t;
 
 typedef struct {
     uint8_t mac_addr[ESP_NOW_ETH_ALEN];
     esp_now_send_status_t status;
-} example_espnow_event_send_cb_t;
+} espnow_event_send_cb_t;
 
 typedef struct {
     uint8_t mac_addr[ESP_NOW_ETH_ALEN];
     uint8_t *data;
     int data_len;
-} example_espnow_event_recv_cb_t;
+} espnow_event_recv_cb_t;
 
 typedef union {
-    example_espnow_event_send_cb_t send_cb;
-    example_espnow_event_recv_cb_t recv_cb;
-} example_espnow_event_info_t;
+    espnow_event_send_cb_t send_cb;
+    espnow_event_recv_cb_t recv_cb;
+} espnow_event_info_t;
 
 /* When ESPNOW sending or receiving callback function is called, post event to ESPNOW task. */
 typedef struct {
-    example_espnow_event_id_t id;
-    example_espnow_event_info_t info;
-} example_espnow_event_t;
+    espnow_event_id_t id;
+    espnow_event_info_t info;
+} espnow_event_t;
 
 enum {
-    EXAMPLE_ESPNOW_DATA_BROADCAST,
-    EXAMPLE_ESPNOW_DATA_UNICAST,
+    ESPNOW_DATA_BROADCAST,
+    ESPNOW_DATA_UNICAST,
     EXAMPLE_ESPNOW_DATA_MAX,
 };
 
@@ -77,6 +77,6 @@ typedef struct {
     int len;                              //Length of ESPNOW data to be sent, unit: byte.
     uint8_t *buffer;                      //Buffer pointing to ESPNOW data.
     uint8_t dest_mac[ESP_NOW_ETH_ALEN];   //MAC address of destination device.
-} example_espnow_send_param_t;
+} espnow_send_param_t;
 
 #endif
