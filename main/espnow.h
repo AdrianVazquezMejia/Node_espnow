@@ -64,7 +64,7 @@ typedef struct {
     uint16_t crc;                         //CRC16 value of ESPNOW data.
     uint32_t magic;                       //Magic number which is used to determine which device to send unicast ESPNOW data.
     uint8_t payload[200];                   //Real payload of ESPNOW data.
-} __attribute__((packed)) example_espnow_data_t;
+} __attribute__((packed)) espnow_data_t;
 
 /* Parameters of sending ESPNOW data. */
 typedef struct {
@@ -78,5 +78,14 @@ typedef struct {
     uint8_t *buffer;                      //Buffer pointing to ESPNOW data.
     uint8_t dest_mac[ESP_NOW_ETH_ALEN];   //MAC address of destination device.
 } espnow_send_param_t;
+
+/**
+ * @ struct for that data ESPNOW <-> UART
+ */
+typedef struct {
+	uint8_t len;                              /* length of the data*/
+	uint8_t *data;								/* pointing to the data*/
+} __attribute__((packed)) esp_uart_data_t;
+
 
 #endif
