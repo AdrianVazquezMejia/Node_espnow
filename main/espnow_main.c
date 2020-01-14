@@ -198,7 +198,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 {
     espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
 
-    assert(send_param->len <= sizeof(espnow_data_t));
+    assert(send_param->len >= sizeof(espnow_data_t));
 
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
     printf("type is: %d ", buf->type);
@@ -423,7 +423,7 @@ static esp_err_t espnow_init(void)
     send_param->magic = 0; //Maestro 1, esclavo 0
     send_param->count = CONFIG_ESPNOW_SEND_COUNT;
     send_param->delay = CONFIG_ESPNOW_SEND_DELAY;
-    send_param->len = 1;
+    send_param->len = 215;
     send_param->buffer = malloc(CONFIG_ESPNOW_SEND_LEN);
     if (send_param->buffer == NULL) {
         ESP_LOGE(TAG, "Malloc send buffer fail");
