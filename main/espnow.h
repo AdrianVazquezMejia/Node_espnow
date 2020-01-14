@@ -24,8 +24,8 @@
 #define IS_BROADCAST_ADDR(addr) (memcmp(addr, broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
 
 typedef enum {
-    EXAMPLE_ESPNOW_SEND_CB,
-    EXAMPLE_ESPNOW_RECV_CB,
+    ESPNOW_SEND_CB,
+    ESPNOW_RECV_CB,
 } espnow_event_id_t;
 
 typedef struct {
@@ -74,7 +74,7 @@ typedef struct {
     uint32_t magic;                       //Magic number which is used to determine which device to send unicast ESPNOW data.
     uint16_t count;                       //Total count of unicast ESPNOW data to be sent.
     uint16_t delay;                       //Delay between sending two ESPNOW data, unit: ms.
-    int len;                              //Length of ESPNOW data to be sent, unit: byte.
+    uint8_t len;                              //Length of ESPNOW data to be sent, unit: byte.
     uint8_t *buffer;                      //Buffer pointing to ESPNOW data.
     uint8_t dest_mac[ESP_NOW_ETH_ALEN];   //MAC address of destination device.
 } espnow_send_param_t;

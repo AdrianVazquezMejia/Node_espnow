@@ -87,11 +87,7 @@ static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 static void example_espnow_deinit(espnow_send_param_t *send_param);
- uint8_t frame[200];
- uint8_t frameR[200];
-
- uint8_t lFrame = 0;
- uint8_t lFrameR = 0;
+static uint8_t *Peer[6];
 static esp_err_t example_event_handler(void *ctx, system_event_t *event)
 {
     switch(event->event_id) {
@@ -138,7 +134,7 @@ static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status
         return;
     }
 
-    evt.id = EXAMPLE_ESPNOW_SEND_CB;
+    evt.id = ESPNOW_SEND_CB;
     memcpy(send_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
     send_cb->status = status;
     if (xQueueSend(espnow_queue, &evt, portMAX_DELAY) != pdTRUE) {
@@ -156,7 +152,7 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
         return;
     }
 
-    evt.id = EXAMPLE_ESPNOW_RECV_CB;
+    evt.id = ESPNOW_RECV_CB;
     memcpy(recv_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
     recv_cb->data = malloc(len);
     if (recv_cb->data == NULL) {
@@ -173,7 +169,7 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
 }
 
 /* Parse received ESPNOW data. */
-int example_espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, int *magic)
+int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, int *magic)
 {
     espnow_data_t *buf = (espnow_data_t *)data;
     uint16_t crc, crc_cal = 0;
@@ -188,7 +184,7 @@ int example_espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, 
     *magic = buf->magic;
     crc = buf->crc;
     buf->crc = 0;
-    crc_cal = crc16_le(UINT16_MAX, (uint8_t const *)buf, data_len);
+    crc_cal = crc16_le(UINT16_MAX, (uint8_t const *)buf,data_len);
 
     if (crc_cal == crc) {
         return buf->type;
@@ -198,13 +194,14 @@ int example_espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, 
 }
 
 /* Prepare ESPNOW data to be sent. */
-void example_espnow_data_prepare(espnow_send_param_t *send_param)
+void espnow_data_prepare(espnow_send_param_t *send_param)
 {
     espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
 
     assert(send_param->len <= sizeof(espnow_data_t));
 
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
+    printf("type is: %d ", buf->type);
     buf->state = send_param->state;
     buf->seq_num = s_example_espnow_seq[buf->type]++;
     buf->crc = 0;
@@ -215,19 +212,58 @@ void example_espnow_data_prepare(espnow_send_param_t *send_param)
 static void espnow_send(void *arg){
 	espnow_send_param_t *send_param = malloc(sizeof(espnow_send_param_t));// = (espnow_send_param_t *)pvParameter;
 	esp_uart_data_t U_data;
+	espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
     send_param->unicast = true;
     send_param->broadcast = false;
     send_param->state = 0;
     send_param->magic = 0; //Maestro 1, esclavo 0
     send_param->count = CONFIG_ESPNOW_SEND_COUNT;
     send_param->delay = CONFIG_ESPNOW_SEND_DELAY;
-    printf("Waiting for the queue");
+
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
-    	printf("Data en espnow is %s   and lenght %d:", U_data.data,U_data.len);
-    	xQueueSend(testQueue,U_data.data, (portTickType)portMAX_DELAY);
+    	printf("Send Queue activated");
+    	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);
+    	//send_param->buffer = U_data.data;
+    	send_param->len = U_data.len;
+    	memcpy(buf->payload,U_data.data,U_data.len);
+    	ESP_LOGI(TAG, "Send data to inside Queue "MACSTR"", MAC2STR(send_param->dest_mac));
+    	espnow_data_prepare(send_param);
+    	if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
+    		ESP_LOGE(TAG, "Send error");
+    		example_espnow_deinit(send_param);
+    		vTaskDelete(NULL);
+    	}
     }
     vTaskDelete(NULL);
 }
+
+/*static void espnow_receive(void *arg){
+	espnow_send_param_t *send_param = malloc(sizeof(espnow_send_param_t));// = (espnow_send_param_t *)pvParameter;
+	esp_uart_data_t U_data;
+	espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
+	espnow_event_t evt;
+
+    int ret;
+    uint8_t recv_state = 0;
+    uint16_t recv_seq = 0;
+    int recv_magic = 0;
+
+
+    printf("espnow_receive task");
+    while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE){
+    	printf("Queue receive\n");
+    	if(evt.id == ESPNOW_RECV_CB){
+    	espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
+    	ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
+    	free(recv_cb->data);
+    	printf("Queue receive UNICA\n");
+    	if (ret == ESPNOW_DATA_UNICAST) {
+    		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
+    	}
+    	}
+    }
+    vTaskDelete(NULL);
+}*/
 static void rpeer_espnow_task(void *pvParameter)
 {
     espnow_event_t evt;
@@ -249,7 +285,7 @@ static void rpeer_espnow_task(void *pvParameter)
     }
     while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {
         switch (evt.id) {
-            case EXAMPLE_ESPNOW_SEND_CB:
+            case ESPNOW_SEND_CB:
             {
                 espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
                 ESP_LOGI(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
@@ -262,7 +298,7 @@ static void rpeer_espnow_task(void *pvParameter)
                     vTaskDelay(send_param->delay/portTICK_RATE_MS);
                 }
 
-                example_espnow_data_prepare(send_param);
+                espnow_data_prepare(send_param);
                 /* Send the next data after the previous data is sent. */
                 if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
                     ESP_LOGE(TAG, "Send error");
@@ -272,15 +308,16 @@ static void rpeer_espnow_task(void *pvParameter)
                 /*Create the tasks for communication with UART*/
                 if (count == 0){
                 	xTaskCreate(espnow_send, "espnow_send", 1024*2, NULL, 3, NULL);
+                	//xTaskCreate(espnow_receive, "espnow_receive", 1024*2, NULL, 3, NULL);
                 	printf("xTaskCreate(ESPnowTasks)");
                 }
                 break;
             }
-            case EXAMPLE_ESPNOW_RECV_CB:
+            case ESPNOW_RECV_CB:
             {
                 espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
                 /*Verify is broadcast*/
-                ret = example_espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
+                ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
 
                 free(recv_cb->data);
                 if (ret == ESPNOW_DATA_BROADCAST) {
@@ -303,12 +340,13 @@ static void rpeer_espnow_task(void *pvParameter)
                         ESP_ERROR_CHECK( esp_now_add_peer(peer) );
                         free(peer);
                         Peer_Quantity++;
-                        ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(recv_cb->mac_addr));
+                        Peer[ Peer_Quantity ] = recv_cb->mac_addr;
+                        ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(Peer[1]));
 
                         /* Send the response to the new peer, for register myself with it*/
                         send_param->unicast = false;
                         send_param->broadcast = true;
-                        example_espnow_data_prepare(send_param);
+                        espnow_data_prepare(send_param);
                         if (esp_now_send(broadcast_mac, send_param->buffer, send_param->len) != ESP_OK) {
                             ESP_LOGE(TAG, "Send error");
                             example_espnow_deinit(send_param);
@@ -318,8 +356,11 @@ static void rpeer_espnow_task(void *pvParameter)
                         send_param->broadcast = false;
                     }
                 }
-                else {
-                    ESP_LOGI(TAG, "Receive error data from: "MACSTR"", MAC2STR(recv_cb->mac_addr));
+                else if (ret == ESPNOW_DATA_UNICAST) {
+            		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
+            	}
+                else{
+                    ESP_LOGI(TAG, "Receive error data from: "MACSTR"  con ret : %d " , MAC2STR(recv_cb->mac_addr),ret);
                 }
                 break;
             }
@@ -392,7 +433,7 @@ static esp_err_t espnow_init(void)
         return ESP_FAIL;
     }
     memcpy(send_param->dest_mac, broadcast_mac, ESP_NOW_ETH_ALEN);
-    example_espnow_data_prepare(send_param);
+    espnow_data_prepare(send_param);
 
     xTaskCreate(rpeer_espnow_task, "register_peer", 2048, send_param, 4, NULL);
    // xTaskCreate(espnow_send, "espnow_send", 1024*2, NULL, 4, NULL);
