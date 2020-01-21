@@ -87,7 +87,7 @@ static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 static void espnow_deinit(espnow_send_param_t *send_param);
-static uint8_t *Peer[6];
+static uint8_t Peer[6][6];
 static esp_err_t example_event_handler(void *ctx, system_event_t *event)
 {
     switch(event->event_id) {
@@ -209,7 +209,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     buf->crc = crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 /* Task for send espnow data coming from UART*/
-static void espnow_send(void *pvParameter){
+void espnow_send(void *pvParameter){
 	ESP_LOGI(TAG,"Entre a la tarea que causa problemas");
 	//espnow_send_param_t *send_param = malloc(sizeof(espnow_send_param_t));// = (espnow_send_param_t *)pvParameter;
 	espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
@@ -221,7 +221,7 @@ static void espnow_send(void *pvParameter){
     //send_param->magic = 0; //Maestro 1, esclavo 0
     //send_param->count = CONFIG_ESPNOW_SEND_COUNT;
     //send_param->delay = CONFIG_ESPNOW_SEND_DELAY;
-
+    ESP_LOGI(TAG, "MAC is: "MACSTR"", MAC2STR(Peer[1]));
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	printf("Send Queue activated");
     	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);//XXX
@@ -229,24 +229,27 @@ static void espnow_send(void *pvParameter){
     	//send_param->len = U_data.len;
     	bzero(buf->payload,200); //XXX
     	memcpy(buf->payload,U_data.data,U_data.len);
-    	ESP_LOGI(TAG, "Send data to inside Queue "MACSTR"", MAC2STR(send_param->dest_mac));
+    	buf->data_len = U_data.len;
+    	ESP_LOGI(TAG, "Send data to inside Queue "MACSTR"", MAC2STR(Peer[1]));
     	espnow_data_prepare(send_param);
-    	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(send_param->dest_mac));
+    	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(Peer[1]));
     	uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);//XXX
-    	if (esp_now_send(send_param->dest_mac, send_param->buffer, 215) != ESP_OK) {
+    	if (esp_now_send(Peer[1], send_param->buffer, 215) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
     		vTaskDelete(NULL);
-//Commet for head
+//Comment for head
     	}
     }
     vTaskDelete(NULL);
 }
 
-/*static void espnow_receive(void *arg){
-	espnow_send_param_t *send_param = malloc(sizeof(espnow_send_param_t));// = (espnow_send_param_t *)pvParameter;
+static void espnow_receive(void *arg){
+	//espnow_send_param_t *send_param = malloc(sizeof(espnow_send_param_t));// = (espnow_send_param_t *)pvParameter;
 	esp_uart_data_t U_data;
-	espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
+	//espnow_event_recv_cb_t *recv_cb;// = &evt.info.recv_cb;
+
+
 	espnow_event_t evt;
 
     int ret;
@@ -260,16 +263,23 @@ static void espnow_send(void *pvParameter){
     	printf("Queue receive\n");
     	if(evt.id == ESPNOW_RECV_CB){
     	espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
+    	espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
     	ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
+    	bzero(U_data.data,200); //XXX
+    	memcpy(U_data.data,buf->payload,U_data.len);
+
+    	U_data.len = recv_cb ->data_len;
     	free(recv_cb->data);
-    	printf("Queue receive UNICA\n");
+    	printf("Queue receive UNICAST\n");
     	if (ret == ESPNOW_DATA_UNICAST) {
     		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
+    		xQueueSend(espnow_Rqueue,&U_data,(portTickType)portMAX_DELAY);
+
     	}
     	}
     }
     vTaskDelete(NULL);
-}*/
+}
 static void rpeer_espnow_task(void *pvParameter)
 {
     espnow_event_t evt;
@@ -279,6 +289,7 @@ static void rpeer_espnow_task(void *pvParameter)
     int ret;
     int Peer_Quantity = 0;
     int count=20;
+    esp_uart_data_t U_data;
     vTaskDelay(5000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "Start sending broadcast data");
 
@@ -324,6 +335,7 @@ static void rpeer_espnow_task(void *pvParameter)
                 espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
                 /*Verify is broadcast*/
                 ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
+                espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
 
                 free(recv_cb->data);
                 if (ret == ESPNOW_DATA_BROADCAST) {
@@ -344,15 +356,16 @@ static void rpeer_espnow_task(void *pvParameter)
                         memcpy(peer->lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
                         memcpy(peer->peer_addr, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
                         ESP_ERROR_CHECK( esp_now_add_peer(peer) );
-                        free(peer);
-                        Peer_Quantity++;
-                        Peer[ Peer_Quantity ] = recv_cb->mac_addr;
-                        ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(Peer[1]));
 
+                        Peer_Quantity++;
+                        memcpy(Peer[ Peer_Quantity ], recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
+                        ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(Peer[1]));
+                        free(peer);
                         /* Send the response to the new peer, for register myself with it*/
+                        if (count==0) {
                         send_param->unicast = false;
                         send_param->broadcast = true;
-                        espnow_data_prepare(send_param);
+                        //espnow_data_prepare(send_param);
                         if (esp_now_send(broadcast_mac, send_param->buffer, send_param->len) != ESP_OK) {
                             ESP_LOGE(TAG, "Send error");
                             espnow_deinit(send_param);
@@ -360,11 +373,20 @@ static void rpeer_espnow_task(void *pvParameter)
                         }
                         send_param->unicast = true;
                         send_param->broadcast = false;
-                    }
+                    }}//XXX
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
-            	}
+            		//bzero(U_data.data,200); //XXX
+					U_data.data=buf->payload;
+					U_data.len = buf ->data_len;
+					//xQueueSend(espnow_Rqueue,&U_data,(portTickType)portMAX_DELAY);
+					printf("Data is:");
+					uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);
+
+
+
+                }
                 else{
                     ESP_LOGI(TAG, "Receive error data from: "MACSTR"  con ret : %d " , MAC2STR(recv_cb->mac_addr),ret);
                 }
@@ -390,6 +412,7 @@ static esp_err_t espnow_init(void)
     }
 
     espnow_Squeue = xQueueCreate(RX_BUF_SIZE, sizeof(esp_uart_data_t));
+    espnow_Rqueue = xQueueCreate(RX_BUF_SIZE, sizeof(esp_uart_data_t));
     /* Initialize ESPNOW and register sending and receiving callback function. */
     ESP_ERROR_CHECK( esp_now_init() );
     ESP_ERROR_CHECK( esp_now_register_send_cb(espnow_send_cb) );
@@ -467,7 +490,7 @@ void UARTinit(void) {
     uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2,  TX_BUF_SIZE * 2,  20, &uart1_queue, 0);
 
     //Create a queue for TX test
-    testQueue = xQueueCreate(RX_BUF_SIZE, 1);
+   testQueue = xQueueCreate(RX_BUF_SIZE, 1);
 }
 
 int sendData(const char* logName, const char* data) //XXX
@@ -481,10 +504,12 @@ int sendData(const char* logName, const char* data) //XXX
 static void tx_task(void *arg) //XXX
 {
 	uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
+	esp_uart_data_t U_data;
     static const char *TX_TASK_TAG = "TX_TASK";
     esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
     while (1) {
-    	if(xQueueReceive(testQueue,dtmp, (portTickType)portMAX_DELAY)){
+    	if(xQueueReceive(testQueue,&U_data, (portTickType)portMAX_DELAY))
+    	{
         sendData(TX_TASK_TAG, "Hello world");
         vTaskDelay(200 / portTICK_PERIOD_MS);
     	}
