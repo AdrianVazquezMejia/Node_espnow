@@ -233,7 +233,7 @@ void espnow_send(void *pvParameter){
     	ESP_LOGI(TAG, "Send data to inside Queue "MACSTR"", MAC2STR(Peer[1]));
     	espnow_data_prepare(send_param);
     	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(Peer[1]));
-    	uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);//XXX
+    	//uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);//XXX
     	if (esp_now_send(Peer[1], send_param->buffer, 215) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
