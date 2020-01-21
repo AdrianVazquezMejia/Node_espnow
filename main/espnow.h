@@ -21,6 +21,7 @@
 
 #define ESPNOW_QUEUE_SIZE           6
 
+#define ESPNOW_PAYLOAD_SIZE 200
 #define IS_BROADCAST_ADDR(addr) (memcmp(addr, broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
 
 typedef enum {

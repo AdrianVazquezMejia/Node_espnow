@@ -77,8 +77,6 @@ static xQueueHandle espnow_queue;
 
 static QueueHandle_t uart1_queue;
 
-static xQueueHandle testQueue;
-
 static xQueueHandle espnow_Squeue;
 
 static xQueueHandle espnow_Rqueue;
@@ -197,7 +195,6 @@ int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t
 void espnow_data_prepare(espnow_send_param_t *send_param)
 {
     espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
-    ESP_LOGI(TAG,"La longitud es %d y y la sizeof es %d ",send_param->len,sizeof(espnow_data_t));
     assert(send_param->len >= sizeof(espnow_data_t));
 
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
@@ -210,76 +207,29 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 }
 /* Task for send espnow data coming from UART*/
 void espnow_send(void *pvParameter){
-	ESP_LOGI(TAG,"Entre a la tarea que causa problemas");
-	//espnow_send_param_t *send_param = malloc(sizeof(espnow_send_param_t));// = (espnow_send_param_t *)pvParameter;
 	espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
 	esp_uart_data_t U_data;
 	espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
     send_param->unicast = true;
     send_param->broadcast = false;
     send_param->state = 0;
-    //send_param->magic = 0; //Maestro 1, esclavo 0
-    //send_param->count = CONFIG_ESPNOW_SEND_COUNT;
-    //send_param->delay = CONFIG_ESPNOW_SEND_DELAY;
-    ESP_LOGI(TAG, "MAC is: "MACSTR"", MAC2STR(Peer[1]));
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	printf("Send Queue activated");
     	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);//XXX
-    	//send_param->buffer = U_data.data;
-    	//send_param->len = U_data.len;
-    	bzero(buf->payload,200); //XXX
+    	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE); //XXX
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
-    	ESP_LOGI(TAG, "Send data to inside Queue "MACSTR"", MAC2STR(Peer[1]));
     	espnow_data_prepare(send_param);
     	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(Peer[1]));
-    	uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);//XXX
     	if (esp_now_send(Peer[1], send_param->buffer, 215) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
     		vTaskDelete(NULL);
-//Comment for head
     	}
     }
     vTaskDelete(NULL);
 }
 
-static void espnow_receive(void *arg){
-	//espnow_send_param_t *send_param = malloc(sizeof(espnow_send_param_t));// = (espnow_send_param_t *)pvParameter;
-	esp_uart_data_t U_data;
-	//espnow_event_recv_cb_t *recv_cb;// = &evt.info.recv_cb;
-
-
-	espnow_event_t evt;
-
-    int ret;
-    uint8_t recv_state = 0;
-    uint16_t recv_seq = 0;
-    int recv_magic = 0;
-
-
-    printf("espnow_receive task");
-    while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE){
-    	printf("Queue receive\n");
-    	if(evt.id == ESPNOW_RECV_CB){
-    	espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
-    	espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
-    	ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
-    	bzero(U_data.data,200); //XXX
-    	memcpy(U_data.data,buf->payload,U_data.len);
-
-    	U_data.len = recv_cb ->data_len;
-    	free(recv_cb->data);
-    	printf("Queue receive UNICAST\n");
-    	if (ret == ESPNOW_DATA_UNICAST) {
-    		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
-    		xQueueSend(espnow_Rqueue,&U_data,(portTickType)portMAX_DELAY);
-
-    	}
-    	}
-    }
-    vTaskDelete(NULL);
-}
 static void rpeer_espnow_task(void *pvParameter)
 {
     espnow_event_t evt;
@@ -325,8 +275,6 @@ static void rpeer_espnow_task(void *pvParameter)
                 /*Create the tasks for communication with UART*/
                 if (count == 0){
                 	xTaskCreate(espnow_send, "espnow_send", 1024*2, send_param, 3, NULL);
-                	//xTaskCreate(espnow_receive, "espnow_receive", 1024*2, NULL, 3, NULL);
-                	printf("xTaskCreate(ESPnowTasks)");
                 }
                 break;
             }
@@ -365,7 +313,6 @@ static void rpeer_espnow_task(void *pvParameter)
                         if (count==0) {
                         send_param->unicast = false;
                         send_param->broadcast = true;
-                        //espnow_data_prepare(send_param);
                         if (esp_now_send(broadcast_mac, send_param->buffer, send_param->len) != ESP_OK) {
                             ESP_LOGE(TAG, "Send error");
                             espnow_deinit(send_param);
@@ -377,10 +324,8 @@ static void rpeer_espnow_task(void *pvParameter)
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
-            		//bzero(U_data.data,200); //XXX
 					U_data.data=buf->payload;
 					U_data.len = buf ->data_len;
-					//xQueueSend(espnow_Rqueue,&U_data,(portTickType)portMAX_DELAY);
 					printf("Data is:");
 					uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);
 
@@ -452,8 +397,8 @@ static esp_err_t espnow_init(void)
     send_param->magic = 0; //Maestro 1, esclavo 0
     send_param->count = CONFIG_ESPNOW_SEND_COUNT;
     send_param->delay = CONFIG_ESPNOW_SEND_DELAY;
-    send_param->len = 215;//XXX
-    send_param->buffer = malloc(215);//XXX
+    send_param->len = CONFIG_ESPNOW_SEND_LEN;//XXX
+    send_param->buffer = malloc(CONFIG_ESPNOW_SEND_LEN);//XXX
     if (send_param->buffer == NULL) {
         ESP_LOGE(TAG, "Malloc send buffer fail");
         free(send_param);
@@ -465,7 +410,6 @@ static esp_err_t espnow_init(void)
     espnow_data_prepare(send_param);
 
     xTaskCreate(rpeer_espnow_task, "register_peer", 2048, send_param, 4, NULL);
-   // xTaskCreate(espnow_send, "espnow_send", 1024*2, NULL, 4, NULL);
     return ESP_OK;
 }
 
@@ -489,32 +433,7 @@ void UARTinit(void) {
     uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2,  TX_BUF_SIZE * 2,  20, &uart1_queue, 0);
 
-    //Create a queue for TX test
-   testQueue = xQueueCreate(RX_BUF_SIZE, 1);
-}
-
-int sendData(const char* logName, const char* data) //XXX
-{
-    const int len = sizeof(data);
-    const int txBytes = uart_write_bytes(UART_NUM_1, data, len);
-    ESP_LOGI(logName, "Wrote %d bytes", txBytes);
-    return txBytes;
-}
-
-static void tx_task(void *arg) //XXX
-{
-	uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
-	esp_uart_data_t U_data;
-    static const char *TX_TASK_TAG = "TX_TASK";
-    esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
-    while (1) {
-    	if(xQueueReceive(testQueue,&U_data, (portTickType)portMAX_DELAY))
-    	{
-        sendData(TX_TASK_TAG, "Hello world");
-        vTaskDelay(200 / portTICK_PERIOD_MS);
-    	}
     }
-}
 
 static void rx_task(void *arg)
 {
@@ -538,7 +457,6 @@ static void rx_task(void *arg)
                     U_data.len = (uint8_t) event.size;
                     ESP_LOGI(RX_TASK_TAG,"Data recivida\n");
                     xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
-                    //uart_write_bytes(UART_NUM_1, (const char*) dtmp, event.size);
                     ESP_LOGI(RX_TASK_TAG,"Y enviada a la cola \n");
                     break;
                 //Event of HW FIFO overflow detected
@@ -597,9 +515,8 @@ void app_main()
     UARTinit();
     // Create UART tasks
     xTaskCreate(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
-    xTaskCreate(tx_task, "uart_tx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL);
-    //Create ESPnow Tasks
 
+    //Create ESPnow Tasks
     wifi_init();
     espnow_init();
 
