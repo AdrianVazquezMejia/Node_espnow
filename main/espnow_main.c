@@ -249,15 +249,11 @@ static void rpeer_espnow_task(void *pvParameter)
     int count=20;
     esp_uart_data_t U_data;
     vTaskDelay(5000 / portTICK_RATE_MS);
-    ESP_LOGI(TAG, "Start sending broadcast data");
+   // ESP_LOGI(TAG, "Start sending broadcast data");
 
     /* Start sending broadcast ESPNOW data. */
     espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
-    if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
-        ESP_LOGE(TAG, "Send error");
-        espnow_deinit(send_param);
-        vTaskDelete(NULL);
-    }
+    xTaskCreate(espnow_send, "espnow_send", 1024*2, send_param, 3, NULL);
     while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {//XXX add peers manually
         switch (evt.id) {
             case ESPNOW_SEND_CB:
@@ -390,9 +386,15 @@ static esp_err_t espnow_init(void)
     memset(peer, 0, sizeof(esp_now_peer_info_t));
     peer->channel = CONFIG_ESPNOW_CHANNEL;
     peer->ifidx = ESPNOW_WIFI_IF;
-    peer->encrypt = false;
-    memcpy(peer->peer_addr, broadcast_mac, ESP_NOW_ETH_ALEN);
+    peer->encrypt = true;
+    /*Peer node 1 : MAC1*/
+    memcpy(peer->peer_addr, forward_mac, ESP_NOW_ETH_ALEN);
     ESP_ERROR_CHECK( esp_now_add_peer(peer) );
+    ESP_LOGI(TAG, "Peer added,  MAC: "MACSTR"", MAC2STR(peer->peer_addr));
+    /*Peer node 2 : MAC2*/
+    memcpy(peer->peer_addr, back_mac, ESP_NOW_ETH_ALEN);
+    ESP_ERROR_CHECK( esp_now_add_peer(peer) );
+    ESP_LOGI(TAG, "Peer added,  MAC: "MACSTR"", MAC2STR(peer->peer_addr));
     free(peer);
 
     /* Initialize sending parameters. */
