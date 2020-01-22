@@ -82,6 +82,8 @@ static xQueueHandle espnow_Squeue;
 static xQueueHandle espnow_Rqueue;
 
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+static uint8_t forward_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xea , 0x38};
+static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xe9 ,0xf0};
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 static void espnow_deinit(espnow_send_param_t *send_param);
@@ -215,6 +217,12 @@ void espnow_send(void *pvParameter){
     send_param->state = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	printf("Send Queue activated");
+    	if (U_data.type == REQUEST)
+    	memcpy(Peer[1],forward_mac,ESP_NOW_ETH_ALEN);
+
+    	if (U_data.type == RESPONSE)
+    	memcpy(Peer[1],back_mac,ESP_NOW_ETH_ALEN);
+
     	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);//XXX
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE); //XXX
     	memcpy(buf->payload,U_data.data,U_data.len);
@@ -250,7 +258,7 @@ static void rpeer_espnow_task(void *pvParameter)
         espnow_deinit(send_param);
         vTaskDelete(NULL);
     }
-    while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {
+    while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {//XXX add peers manually
         switch (evt.id) {
             case ESPNOW_SEND_CB:
             {
@@ -324,13 +332,18 @@ static void rpeer_espnow_task(void *pvParameter)
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
-					U_data.data=buf->payload;
+            		ESP_LOGI(TAG, "Repeating tha data.");
+            		U_data.data=buf->payload;
+            		U_data.len =0;
 					U_data.len = buf ->data_len;
-					printf("Data is:");
-					uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);
+					if(memcmp(recv_cb->mac_addr , back_mac,ESP_NOW_ETH_ALEN) == 0)
+					U_data.type = REQUEST;
 
+					if(memcmp(recv_cb->mac_addr , forward_mac,ESP_NOW_ETH_ALEN) == 0)
+					U_data.type = RESPONSE;
 
-
+					ESP_LOGI(TAG, "The direction is: %u", U_data.type);
+					xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
                 }
                 else{
                     ESP_LOGI(TAG, "Receive error data from: "MACSTR"  con ret : %d " , MAC2STR(recv_cb->mac_addr),ret);
