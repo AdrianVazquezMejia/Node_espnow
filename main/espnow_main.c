@@ -82,6 +82,8 @@ static xQueueHandle espnow_Squeue;
 static xQueueHandle espnow_Rqueue;
 
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+static uint8_t repeater_mac[ESP_NOW_ETH_ALEN] = { 0x24 , 0x6f , 0x28 ,0x24 , 0xac, 0x74};
+//static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xe9};
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 static void espnow_deinit(espnow_send_param_t *send_param);
@@ -215,8 +217,9 @@ void espnow_send(void *pvParameter){
     send_param->state = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	printf("Send Queue activated");
-    	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);//XXX
-    	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE); //XXX
+    	memcpy(Peer[1],repeater_mac,ESP_NOW_ETH_ALEN);//XXX
+    	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);
+    	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
     	espnow_data_prepare(send_param);
@@ -250,7 +253,7 @@ static void rpeer_espnow_task(void *pvParameter)
         espnow_deinit(send_param);
         vTaskDelete(NULL);
     }
-    while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {
+    while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {//XXX add peers manually
         switch (evt.id) {
             case ESPNOW_SEND_CB:
             {
@@ -326,11 +329,10 @@ static void rpeer_espnow_task(void *pvParameter)
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 					U_data.data=buf->payload;
 					U_data.len = buf ->data_len;
-					printf("Data is:");
-					uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);
-
-
-
+					if(memcmp(recv_cb->mac_addr , repeater_mac,ESP_NOW_ETH_ALEN)== 0){
+						ESP_LOGI(TAG,"Receiving from repeater and writing on UART");
+						uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);
+					}
                 }
                 else{
                     ESP_LOGI(TAG, "Receive error data from: "MACSTR"  con ret : %d " , MAC2STR(recv_cb->mac_addr),ret);

@@ -57,6 +57,11 @@ enum {
     EXAMPLE_ESPNOW_DATA_MAX,
 };
 
+enum {
+	REQUEST,
+	RESPONSE,
+};
+
 /* User defined field of ESPNOW data in this example. */
 typedef struct {
     uint8_t type;                         //Broadcast or unicast ESPNOW data.
@@ -86,7 +91,9 @@ typedef struct {
  */
 typedef struct {
 	uint8_t len;                              /* length of the data*/
-	uint8_t *data;								/* pointing to the data*/
+	uint8_t *data;							/* pointing to the data*/
+	uint8_t type;							/* Response or Request*/
+
 } __attribute__((packed)) esp_uart_data_t;
 
 
