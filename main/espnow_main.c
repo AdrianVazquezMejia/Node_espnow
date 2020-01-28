@@ -84,7 +84,7 @@ static xQueueHandle espnow_Rqueue;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t Node1_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xf3, 0x04};
 static uint8_t Node2_mac[ESP_NOW_ETH_ALEN] = { 0x24 , 0x6f , 0x28 ,0x24 , 0xac, 0x74};
-static uint8_t Node0_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xe9, 0xf0};
+//static uint8_t Node0_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xe9, 0xf0};
 
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
@@ -223,7 +223,7 @@ void espnow_send(void *pvParameter){
     	espnow_data_prepare(send_param);
 
     	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(Peer[1]));
-    	if (esp_now_send(Peer[1], send_param->buffer, 215) != ESP_OK) {
+    	if (esp_now_send(Peer[1], send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
     		vTaskDelete(NULL);
@@ -231,7 +231,7 @@ void espnow_send(void *pvParameter){
     	memcpy(send_param->dest_mac,Peer[2],ESP_NOW_ETH_ALEN);
     	espnow_data_prepare(send_param);
     	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(Peer[2]));
-    	if (esp_now_send(Peer[2], send_param->buffer, 215) != ESP_OK) {
+    	if (esp_now_send(Peer[2], send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
     		vTaskDelete(NULL);
@@ -375,10 +375,10 @@ static esp_err_t espnow_init(void)
     ESP_ERROR_CHECK( esp_now_add_peer(peer) );
     ESP_LOGI(TAG, "Peer added,  MAC: "MACSTR"", MAC2STR(peer->peer_addr));
 
-    memcpy(peer->peer_addr, Node0_mac, ESP_NOW_ETH_ALEN);
+/*    memcpy(peer->peer_addr, Node0_mac, ESP_NOW_ETH_ALEN);
     ESP_ERROR_CHECK( esp_now_add_peer(peer) );
     ESP_LOGI(TAG, "Peer added,  MAC: "MACSTR"", MAC2STR(peer->peer_addr));
-    free(peer);
+    free(peer)*/;
 
 
 
