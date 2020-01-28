@@ -83,6 +83,7 @@ static xQueueHandle espnow_Rqueue;
 
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t forward_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xea , 0x38};
+//static uint8_t forward_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xf3 , 0x04};
 static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xe9 ,0xf0};
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
@@ -262,27 +263,8 @@ static void rpeer_espnow_task(void *pvParameter)
             {
                 espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
                 ESP_LOGI(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
-                if (count==0) {
-                    break;
-                }
-                count--;
-                /*Delay before send the next data*/
-                if (send_param->delay > 0) {
-                    vTaskDelay(send_param->delay/portTICK_RATE_MS);
-                }
-
-                espnow_data_prepare(send_param);
-                /* Send the next data after the previous data is sent. */
-                if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
-                    ESP_LOGE(TAG, "Send error");
-                    espnow_deinit(send_param);
-                    vTaskDelete(NULL);
-                }
-                /*Create the tasks for communication with UART*/
-                if (count == 0){
-                	xTaskCreate(espnow_send, "espnow_send", 1024*2, send_param, 3, NULL);
-                }
                 break;
+
             }
             case ESPNOW_RECV_CB:
             {
