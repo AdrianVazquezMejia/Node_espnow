@@ -216,20 +216,22 @@ void espnow_send(void *pvParameter){
     send_param->broadcast = false;
     send_param->state = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
-    	printf("Send Queue activated");
-    	if (U_data.type == REQUEST)
+    	printf("Send Queue activated\n");
+    	if (U_data.type == REQUEST){
     	memcpy(Peer[1],forward_mac,ESP_NOW_ETH_ALEN);
-
-    	if (U_data.type == RESPONSE)
+    	ESP_LOGI(TAG,"Requesting MODBUS");
+    	}
+    	if (U_data.type == RESPONSE){
     	memcpy(Peer[1],back_mac,ESP_NOW_ETH_ALEN);
-
+    	ESP_LOGI(TAG,"Responding MODBUS");
+    	}
     	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);//XXX
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE); //XXX
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
     	espnow_data_prepare(send_param);
     	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(Peer[1]));
-    	if (esp_now_send(Peer[1], send_param->buffer, 215) != ESP_OK) {
+    	if (esp_now_send(Peer[1], send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
     		vTaskDelete(NULL);
