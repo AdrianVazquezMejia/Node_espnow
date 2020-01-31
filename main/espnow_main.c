@@ -76,6 +76,12 @@ static const int TX_BUF_SIZE = 1024;
 
 #define CTS_PIN   (19)
 
+#define NodeID 0
+#define DEFAULT_ID 255
+#define BaudaRate 1
+#define DEFAULT_BR 8 //115200
+#define ROUTING_TABLE_SIZE 255
+
 static const char *TAG = "espnow_example";
  //Queue definitions
 
@@ -87,11 +93,14 @@ static xQueueHandle espnow_Squeue;
 
 static xQueueHandle espnow_Rqueue;
 
+ nvs_handle nvshandle;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 static void espnow_deinit(espnow_send_param_t *send_param);
 static uint8_t Peer[6][6];
+static uint8_t Node_ID;
+static uint8_t BaudaRateID;
 static esp_err_t example_event_handler(void *ctx, system_event_t *event)
 {
     switch(event->event_id) {
@@ -221,8 +230,8 @@ void espnow_send(void *pvParameter){
     send_param->state = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	printf("Send Queue activated");
-    	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);//XXX
-    	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE); //XXX
+    	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);
+    	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
     	espnow_data_prepare(send_param);
@@ -326,7 +335,7 @@ static void rpeer_espnow_task(void *pvParameter)
                         }
                         send_param->unicast = true;
                         send_param->broadcast = false;
-                    }}//XXX
+                    }}
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
@@ -403,8 +412,8 @@ static esp_err_t espnow_init(void)
     send_param->magic = 0; //Maestro 1, esclavo 0
     send_param->count = CONFIG_ESPNOW_SEND_COUNT;
     send_param->delay = CONFIG_ESPNOW_SEND_DELAY;
-    send_param->len = CONFIG_ESPNOW_SEND_LEN;//XXX
-    send_param->buffer = malloc(CONFIG_ESPNOW_SEND_LEN);//XXX
+    send_param->len = CONFIG_ESPNOW_SEND_LEN;
+    send_param->buffer = malloc(CONFIG_ESPNOW_SEND_LEN);
     if (send_param->buffer == NULL) {
         ESP_LOGE(TAG, "Malloc send buffer fail");
         free(send_param);
@@ -505,7 +514,75 @@ static void rx_task(void *arg)
     dtmp = NULL;
     vTaskDelete(NULL);
 }
+void vConfigLoad(){
+    esp_err_t err = nvs_flash_init();
+	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
+	    if (err != ESP_OK) {
+	        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+	    } else {
+	        printf("Done\n");
 
+	        // Read
+	        printf("Reading Config from NVS ...\n ");
+	        uint8_t HoldingRegister[200] ={0}; // value will default to 0, if not set yet in NVS
+	        size_t size_data = sizeof(HoldingRegister);
+	        uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
+	        size_t size_RT = sizeof(RoutingTable);
+	        HoldingRegister[NodeID]= DEFAULT_ID;
+	        HoldingRegister[BaudaRate]= DEFAULT_BR;
+
+
+	        err = nvs_get_blob(nvshandle, "HoldingRegister", HoldingRegister, &size_data);
+	        switch (err) {
+	            case ESP_OK:
+	                printf("Config Holding Register loaded: %d BR and ID %d\n",HoldingRegister[BaudaRate],HoldingRegister[NodeID] );
+	                break;
+	            case ESP_ERR_NVS_NOT_FOUND:
+	                printf("The value is not initialized yet!\n");
+	                break;
+	            default :
+	                printf("Error (%s) reading!\n", esp_err_to_name(err));
+	        }
+	        err = nvs_get_blob(nvshandle, "RoutingTable",RoutingTable, &size_RT);
+	        switch (err) {
+	            case ESP_OK:
+	                printf("Config RoutingTable loaded\n");
+	                break;
+	            case ESP_ERR_NVS_NOT_FOUND:
+	                printf("The RT is not initialized yet!\n");
+	                break;
+	            default :
+	                printf("Error (%s) reading!\n", esp_err_to_name(err));
+	        }
+
+
+
+	        // Write
+	        printf("Updating HR in NVS ... \n");
+	        err = nvs_set_blob(nvshandle, "HoldingRegister", HoldingRegister,size_data);
+	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+	        printf("Updating RT in NVS ... \n");
+	        err = nvs_set_blob(nvshandle, "RoutingTable", RoutingTable,size_RT);
+	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+	        // Commit written value.
+	        // After setting any values, nvs_commit() must be called to ensure changes are written
+	        // to flash storage. Implementations may write to storage at other times,
+	        // but this is not guaranteed.
+	        printf("Committing updates in NVS ... ");
+	        err = nvs_commit(nvshandle);
+	        printf((err != ESP_OK) ? "Failed!\n" : "Config Done\n");
+
+	        // Close
+	        nvs_close(nvshandle);
+
+	        Node_ID = HoldingRegister[NodeID];
+	        BaudaRateID = HoldingRegister[BaudaRate];
+	    }
+
+
+}
 
 
 void app_main()
@@ -518,6 +595,8 @@ void app_main()
     }
     ESP_ERROR_CHECK( ret );
     esp_log_level_set(TAG, ESP_LOG_INFO);
+
+    vConfigLoad();
     UARTinit();
     // Create UART tasks
     xTaskCreate(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
