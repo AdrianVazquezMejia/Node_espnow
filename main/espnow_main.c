@@ -67,11 +67,11 @@ static const int RX_BUF_SIZE = 1024;
 static const int TX_BUF_SIZE = 1024;
 
 
-#define TXD_PIN (GPIO_NUM_4)
-#define RXD_PIN (GPIO_NUM_5)
+#define TXD_PIN (GPIO_NUM_25)
+#define RXD_PIN (GPIO_NUM_25)
 
 // RTS for RS485 Half-Duplex Mode manages DE/~RE
-#define RTS_PIN   (18)
+#define RTS_PIN   (27)
 
 
 #define CTS_PIN   (19)
@@ -81,6 +81,7 @@ static const int TX_BUF_SIZE = 1024;
 #define BaudaRate 1
 #define DEFAULT_BR 8 //115200
 #define ROUTING_TABLE_SIZE 255
+#define PEER_TABLE_SIZE 100
 
 static const char *TAG = "espnow_example";
  //Queue definitions
@@ -526,8 +527,13 @@ void vConfigLoad(){
 	        printf("Reading Config from NVS ...\n ");
 	        uint8_t HoldingRegister[200] ={0}; // value will default to 0, if not set yet in NVS
 	        size_t size_data = sizeof(HoldingRegister);
+
 	        uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
 	        size_t size_RT = sizeof(RoutingTable);
+
+	        uint8_t PeerTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
+	        size_t size_Peer = sizeof(PeerTable);
+
 	        HoldingRegister[NodeID]= DEFAULT_ID;
 	        HoldingRegister[BaudaRate]= DEFAULT_BR;
 
@@ -555,6 +561,18 @@ void vConfigLoad(){
 	                printf("Error (%s) reading!\n", esp_err_to_name(err));
 	        }
 
+	        err = nvs_get_blob(nvshandle, "PeerTable",PeerTable, &size_Peer);
+	        switch (err) {
+	            case ESP_OK:
+	                printf("Config Peer Table loaded\n");
+	                break;
+	            case ESP_ERR_NVS_NOT_FOUND:
+	                printf("The Peer Table is not initialized yet!\n");
+	                break;
+	            default :
+	                printf("Error (%s) reading!\n", esp_err_to_name(err));
+	        }
+
 
 
 	        // Write
@@ -566,6 +584,9 @@ void vConfigLoad(){
 	        err = nvs_set_blob(nvshandle, "RoutingTable", RoutingTable,size_RT);
 	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 
+	        printf("Updating PT in NVS ... \n");
+	        err = nvs_set_blob(nvshandle, "PeerTable", PeerTable,size_Peer);
+	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 	        // Commit written value.
 	        // After setting any values, nvs_commit() must be called to ensure changes are written
 	        // to flash storage. Implementations may write to storage at other times,
@@ -584,7 +605,10 @@ void vConfigLoad(){
 
 }
 
-
+uint8_t uConfigGetNVS(char const *aID){
+	printf(aID);
+	return 1;
+}
 void app_main()
 {
     // Initialize NVS
@@ -595,7 +619,7 @@ void app_main()
     }
     ESP_ERROR_CHECK( ret );
     esp_log_level_set(TAG, ESP_LOG_INFO);
-
+    uConfigGetNVS("NVS Getting \n\r");
     vConfigLoad();
     UARTinit();
     // Create UART tasks
