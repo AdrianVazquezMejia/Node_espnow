@@ -437,9 +437,37 @@ static void espnow_deinit(espnow_send_param_t *send_param)
     esp_now_deinit();
 }
 
-void UARTinit(void) {
+void UARTinit(int BTid) {
+	uart_driver_delete(UART_NUM_1);
+	int uart_baudarate = 8;
+	switch(BTid) {
+		case 1:
+			uart_baudarate = 9600;
+			break;
+		case 2:
+			uart_baudarate = 14400;
+			break;
+		case 3:
+			uart_baudarate = 19200;
+			break;
+		case 4:
+			uart_baudarate = 28800;
+			break;
+		case 5:
+			uart_baudarate = 38400;
+			break;
+		case 6:
+			uart_baudarate = 57600;
+			break;
+		case 7:
+			uart_baudarate = 76800;
+			break;
+		case 8:
+			uart_baudarate = 115200;
+			break;
+	}
     const uart_config_t uart_config = {
-        .baud_rate = 115200,
+        .baud_rate = uart_baudarate,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
@@ -605,9 +633,74 @@ void vConfigLoad(){
 
 }
 
-uint8_t uConfigGetNVS(char const *aID){
-	printf(aID);
-	return 1;
+uint8_t *uConfigGetNVS(char const *aID){
+    esp_err_t err = nvs_flash_init();
+	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
+    printf("Reading Config from NVS ...\n ");
+    uint8_t HoldingRegister[200] ={0}; // value will default to 0, if not set yet in NVS
+    size_t size_data = sizeof(HoldingRegister);
+
+    uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
+    size_t size_RT = sizeof(RoutingTable);
+
+    uint8_t PeerTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
+    size_t size_Peer = sizeof(PeerTable);
+    int sw = 0;
+    if(strcmp(aID, "HoldingRegister") == 0)
+    	sw = 1;
+    if(strcmp(aID, "RoutingTable") == 0)
+    	sw = 2;
+    if(strcmp(aID, "PeerTable") == 0)
+    	sw = 3;
+
+    switch(sw){
+
+    	case 1:
+    	err = nvs_get_blob(nvshandle, "HoldingRegister", HoldingRegister, &size_data);
+		        switch (err) {
+		            case ESP_OK:
+		                printf("Config Holding Register loaded: %d BR and ID %d\n",HoldingRegister[BaudaRate],HoldingRegister[NodeID] );
+		                break;
+		            case ESP_ERR_NVS_NOT_FOUND:
+		                printf("The value is not initialized yet!\n");
+		                break;
+		            default :
+		                printf("Error (%s) reading!\n", esp_err_to_name(err));
+		        }
+		        return HoldingRegister;
+		        break;
+
+		case 2:
+		err = nvs_get_blob(nvshandle, "RoutingTable",RoutingTable, &size_RT);
+		switch (err) {
+			case ESP_OK:
+				printf("Config RoutingTable loaded\n");
+				break;
+			case ESP_ERR_NVS_NOT_FOUND:
+				printf("The RT is not initialized yet!\n");
+				break;
+			default :
+				printf("Error (%s) reading!\n", esp_err_to_name(err));
+		}
+		return RoutingTable;
+		break;
+
+		case 3:
+		err = nvs_get_blob(nvshandle, "PeerTable",PeerTable, &size_Peer);
+		switch (err) {
+			case ESP_OK:
+				printf("Config Peer Table loaded\n");
+				break;
+			case ESP_ERR_NVS_NOT_FOUND:
+				printf("The Peer Table is not initialized yet!\n");
+				break;
+			default :
+				printf("Error (%s) reading!\n", esp_err_to_name(err));
+		}
+		return PeerTable;
+		break;
+    }
+return 1;
 }
 void app_main()
 {
@@ -619,7 +712,8 @@ void app_main()
     }
     ESP_ERROR_CHECK( ret );
     esp_log_level_set(TAG, ESP_LOG_INFO);
-    uConfigGetNVS("NVS Getting \n\r");
+    uint8_t HoldingRegister = uConfigGetNVS("HoldingRegister");//xxx
+
     vConfigLoad();
     UARTinit();
     // Create UART tasks
