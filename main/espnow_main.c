@@ -63,15 +63,16 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 
 
 
+
 static const int RX_BUF_SIZE = 1024;
 static const int TX_BUF_SIZE = 1024;
 
 
-#define TXD_PIN (GPIO_NUM_25)
-#define RXD_PIN (GPIO_NUM_25)
+#define TXD_PIN (GPIO_NUM_33)
+#define RXD_PIN (GPIO_NUM_26)
 
 // RTS for RS485 Half-Duplex Mode manages DE/~RE
-#define RTS_PIN   (27)
+#define RTS_PIN   (25)
 
 
 #define CTS_PIN   (19)
@@ -82,6 +83,7 @@ static const int TX_BUF_SIZE = 1024;
 #define DEFAULT_BR 8 //115200
 #define ROUTING_TABLE_SIZE 255
 #define PEER_TABLE_SIZE 100
+#define HOLDING_REGISTER_SIZE 200
 
 static const char *TAG = "espnow_example";
  //Queue definitions
@@ -466,6 +468,7 @@ void UARTinit(int BTid) {
 			uart_baudarate = 115200;
 			break;
 	}
+	ESP_LOGI(TAG, "El baudarate is %d",uart_baudarate );
     const uart_config_t uart_config = {
         .baud_rate = uart_baudarate,
         .data_bits = UART_DATA_8_BITS,
@@ -633,33 +636,31 @@ void vConfigLoad(){
 
 }
 
-uint8_t *uConfigGetNVS(char const *aID){
+void vConfigGetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
     printf("Reading Config from NVS ...\n ");
-    uint8_t HoldingRegister[200] ={0}; // value will default to 0, if not set yet in NVS
-    size_t size_data = sizeof(HoldingRegister);
-
-    uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
-    size_t size_RT = sizeof(RoutingTable);
-
-    uint8_t PeerTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
-    size_t size_Peer = sizeof(PeerTable);
+    size_t size_data = 0;
     int sw = 0;
-    if(strcmp(aID, "HoldingRegister") == 0)
+    if(strcmp(Name, "HoldingRegister") == 0){
     	sw = 1;
-    if(strcmp(aID, "RoutingTable") == 0)
-    	sw = 2;
-    if(strcmp(aID, "PeerTable") == 0)
+    	size_data = (size_t) HOLDING_REGISTER_SIZE;
+    }
+    if(strcmp(Name, "RoutingTable") == 0){
+        sw = 2;
+        size_data =(size_t) ROUTING_TABLE_SIZE;
+    }
+    if(strcmp(Name, "PeerTable") == 0){
     	sw = 3;
-
+    	size_data = (size_t)PEER_TABLE_SIZE;
+        }
     switch(sw){
 
     	case 1:
-    	err = nvs_get_blob(nvshandle, "HoldingRegister", HoldingRegister, &size_data);
+    	err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
 		        switch (err) {
 		            case ESP_OK:
-		                printf("Config Holding Register loaded: %d BR and ID %d\n",HoldingRegister[BaudaRate],HoldingRegister[NodeID] );
+		                printf("Config Holding Register loaded: %d BR and ID %d\n",Array[BaudaRate],Array[NodeID] );
 		                break;
 		            case ESP_ERR_NVS_NOT_FOUND:
 		                printf("The value is not initialized yet!\n");
@@ -667,11 +668,10 @@ uint8_t *uConfigGetNVS(char const *aID){
 		            default :
 		                printf("Error (%s) reading!\n", esp_err_to_name(err));
 		        }
-		        return HoldingRegister;
 		        break;
 
 		case 2:
-		err = nvs_get_blob(nvshandle, "RoutingTable",RoutingTable, &size_RT);
+		err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
 		switch (err) {
 			case ESP_OK:
 				printf("Config RoutingTable loaded\n");
@@ -682,11 +682,10 @@ uint8_t *uConfigGetNVS(char const *aID){
 			default :
 				printf("Error (%s) reading!\n", esp_err_to_name(err));
 		}
-		return RoutingTable;
 		break;
 
 		case 3:
-		err = nvs_get_blob(nvshandle, "PeerTable",PeerTable, &size_Peer);
+		err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
 		switch (err) {
 			case ESP_OK:
 				printf("Config Peer Table loaded\n");
@@ -697,10 +696,8 @@ uint8_t *uConfigGetNVS(char const *aID){
 			default :
 				printf("Error (%s) reading!\n", esp_err_to_name(err));
 		}
-		return PeerTable;
 		break;
     }
-return 1;
 }
 void app_main()
 {
@@ -712,10 +709,12 @@ void app_main()
     }
     ESP_ERROR_CHECK( ret );
     esp_log_level_set(TAG, ESP_LOG_INFO);
-    uint8_t HoldingRegister = uConfigGetNVS("HoldingRegister");//xxx
-
+    uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
     vConfigLoad();
-    UARTinit();
+    vConfigGetNVS(HoldingRegister,"HoldingRegister");//xxx
+
+
+    UARTinit(HoldingRegister[BaudaRate]);
     // Create UART tasks
     xTaskCreate(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
 
