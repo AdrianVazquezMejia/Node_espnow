@@ -84,6 +84,8 @@ static const int TX_BUF_SIZE = 1024;
 #define ROUTING_TABLE_SIZE 255
 #define PEER_TABLE_SIZE 100
 #define HOLDING_REGISTER_SIZE 200
+#define NODE 0
+#define RTU 1
 
 static const char *TAG = "espnow_example";
  //Queue definitions
@@ -482,6 +484,19 @@ void UARTinit(int BTid) {
     uart_set_mode(UART_NUM_1, UART_MODE_RS485_HALF_DUPLEX);
     }
 
+int uComDirection(uint8_t *Slave){
+
+printf("%d",*Slave);
+	if ( *Slave <= 100){
+		ESP_LOGI(TAG,"Direction is RTU");
+		return RTU;}
+	else if(*Slave > 100) {
+		ESP_LOGI(TAG,"Direction is NODE");
+		return NODE;
+	}
+	return -1;
+}
+
 static void rx_task(void *arg)
 {
     uart_event_t event;
@@ -499,7 +514,7 @@ static void rx_task(void *arg)
                 case UART_DATA:
                     ESP_LOGI(RX_TASK_TAG, "[UART DATA]: %d", event.size);
                     uart_read_bytes(UART_NUM_1, dtmp, event.size, portMAX_DELAY);
-                    ESP_LOGI(RX_TASK_TAG, "[DATA EVT]:");
+                    int info = uComDirection(&dtmp[0]);
                     U_data.data = dtmp;
                     U_data.len = (uint8_t) event.size;
                     ESP_LOGI(RX_TASK_TAG,"Data recivida\n");
