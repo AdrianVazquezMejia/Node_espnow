@@ -90,7 +90,9 @@ static xQueueHandle espnow_Rqueue;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 //static uint8_t Node1_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xf3, 0x04};
 //static uint8_t Node2_mac[ESP_NOW_ETH_ALEN] = { 0x24 , 0x6f , 0x28 ,0x24 , 0xac, 0x74};
-static uint8_t Node0_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xe9, 0xf0};
+//static uint8_t Node0_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xe9, 0xf0};
+static uint8_t Node0_mac[ESP_NOW_ETH_ALEN] = {0xbc,0xdd,0xc2,0xd4,0xad,0xb4};
+
 
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
@@ -319,6 +321,7 @@ static void rpeer_espnow_task(void *pvParameter)
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 					U_data.data=buf->payload;
 					U_data.len = buf ->data_len;
+					ESP_LOGI(TAG,"Datos %s y longitud %d", U_data.data,U_data.len);
 					uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);
 
                 }
