@@ -140,7 +140,69 @@ static void wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
 #endif
 }
+void vConfigGetNVS(uint8_t *Array , const char *Name){
+    esp_err_t err = nvs_flash_init();
+	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
+    printf("Reading Config from NVS ...\n ");
+    size_t size_data = 0;
+    int sw = 0;
+    if(strcmp(Name, "HoldingRegister") == 0){
+    	sw = 1;
+    	size_data = (size_t) HOLDING_REGISTER_SIZE;
+    }
+    if(strcmp(Name, "RoutingTable") == 0){
+        sw = 2;
+        size_data =(size_t) ROUTING_TABLE_SIZE;
+    }
+    if(strcmp(Name, "PeerTable") == 0){
+    	sw = 3;
+    	size_data = (size_t)PEER_TABLE_SIZE;
+        }
+    switch(sw){
 
+    	case 1:
+    	err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
+		        switch (err) {
+		            case ESP_OK:
+		                printf("Config Holding Register loaded: %d BR and ID %d\n",Array[BaudaRate],Array[NodeID] );
+		                break;
+		            case ESP_ERR_NVS_NOT_FOUND:
+		                printf("The value is not initialized yet!\n");
+		                break;
+		            default :
+		                printf("Error (%s) reading!\n", esp_err_to_name(err));
+		        }
+		        break;
+
+		case 2:
+		err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
+		switch (err) {
+			case ESP_OK:
+				printf("Config RoutingTable loaded\n");
+				break;
+			case ESP_ERR_NVS_NOT_FOUND:
+				printf("The RT is not initialized yet!\n");
+				break;
+			default :
+				printf("Error (%s) reading!\n", esp_err_to_name(err));
+		}
+		break;
+
+		case 3:
+		err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
+		switch (err) {
+			case ESP_OK:
+				printf("Config Peer Table loaded\n");
+				break;
+			case ESP_ERR_NVS_NOT_FOUND:
+				printf("The Peer Table is not initialized yet!\n");
+				break;
+			default :
+				printf("Error (%s) reading!\n", esp_err_to_name(err));
+		}
+		break;
+    }
+}
 /* ESPNOW sending or receiving callback function is called in WiFi task.
  * Users should not do lengthy operations from this task. Instead, post
  * necessary data to a queue and handle it from a lower priority task. */
@@ -250,7 +312,26 @@ void espnow_send(void *pvParameter){
     }
     vTaskDelete(NULL);
 }
+uint16_t uComGetTransData(int i){
 
+    uint8_t HoldingRegister[200] ={0}; // value will default to 0, if not set yet in NVS
+	vConfigGetNVS(HoldingRegister,"HoldingRegister");
+	if (HoldingRegister[NodeID] == i) {
+		ESP_LOGI(TAG, "The informations is for ME! node %d", i);
+		return 255;//xxx
+	}
+
+    uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
+	vConfigGetNVS(RoutingTable,"RoutingTable");
+	int r = RoutingTable[i];
+	if (r == HoldingRegister[NodeID]){
+		ESP_LOGI(TAG, "The informations is for my RTU! RTU %d", i);
+		return 256;
+	}
+	ESP_LOGI(TAG, "The informations is NOT for ME! node %d to node %d", i, r);
+
+	return r;
+}
 static void rpeer_espnow_task(void *pvParameter)
 {
     espnow_event_t evt;
@@ -350,10 +431,17 @@ static void rpeer_espnow_task(void *pvParameter)
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 					U_data.data=buf->payload;
 					U_data.len = buf ->data_len;
-					printf("Data is:");
+					int i = U_data.data[0];
+					int r = uComGetTransData(i);
+
+					if (r == 255 ){
+						ESP_LOGI(TAG,"Function to load my config");//xxx
+					}
+					else if (256)
 					uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);
 
-
+					else
+						ESP_LOGI(TAG,"Queue to espnow send");
 
                 }
                 else{
@@ -524,10 +612,10 @@ static void rx_task(void *arg)
                     ESP_LOGI(RX_TASK_TAG,"Data recivida\n");
                     switch(info){//xxx
                     case RTU:
-                    	ESP_LOGI(TAG,"RTU");
+                    	xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
 						break;
                     case NODE:
-                    	xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
+                    	ESP_LOGI(TAG,"RTU");
                     	break;
                     }
 
@@ -582,7 +670,7 @@ void vConfigLoad(){
 	        printf("Done\n");
 
 	        // Read
-	        printf("Reading Config from NVS ...\n ");
+	        printf("Reading Config from NVS ...\n ");//xxx
 	        uint8_t HoldingRegister[200] ={0}; // value will default to 0, if not set yet in NVS
 	        size_t size_data = sizeof(HoldingRegister);
 
@@ -663,69 +751,7 @@ void vConfigLoad(){
 
 }
 
-void vConfigGetNVS(uint8_t *Array , const char *Name){
-    esp_err_t err = nvs_flash_init();
-	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
-    printf("Reading Config from NVS ...\n ");
-    size_t size_data = 0;
-    int sw = 0;
-    if(strcmp(Name, "HoldingRegister") == 0){
-    	sw = 1;
-    	size_data = (size_t) HOLDING_REGISTER_SIZE;
-    }
-    if(strcmp(Name, "RoutingTable") == 0){
-        sw = 2;
-        size_data =(size_t) ROUTING_TABLE_SIZE;
-    }
-    if(strcmp(Name, "PeerTable") == 0){
-    	sw = 3;
-    	size_data = (size_t)PEER_TABLE_SIZE;
-        }
-    switch(sw){
 
-    	case 1:
-    	err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
-		        switch (err) {
-		            case ESP_OK:
-		                printf("Config Holding Register loaded: %d BR and ID %d\n",Array[BaudaRate],Array[NodeID] );
-		                break;
-		            case ESP_ERR_NVS_NOT_FOUND:
-		                printf("The value is not initialized yet!\n");
-		                break;
-		            default :
-		                printf("Error (%s) reading!\n", esp_err_to_name(err));
-		        }
-		        break;
-
-		case 2:
-		err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
-		switch (err) {
-			case ESP_OK:
-				printf("Config RoutingTable loaded\n");
-				break;
-			case ESP_ERR_NVS_NOT_FOUND:
-				printf("The RT is not initialized yet!\n");
-				break;
-			default :
-				printf("Error (%s) reading!\n", esp_err_to_name(err));
-		}
-		break;
-
-		case 3:
-		err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
-		switch (err) {
-			case ESP_OK:
-				printf("Config Peer Table loaded\n");
-				break;
-			case ESP_ERR_NVS_NOT_FOUND:
-				printf("The Peer Table is not initialized yet!\n");
-				break;
-			default :
-				printf("Error (%s) reading!\n", esp_err_to_name(err));
-		}
-		break;
-    }
-}
 void app_main()
 {
     // Initialize NVS
@@ -748,5 +774,6 @@ void app_main()
     //Create ESPnow Tasks
     wifi_init();
     espnow_init();
+
 
 }
