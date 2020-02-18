@@ -100,6 +100,7 @@ static xQueueHandle espnow_Rqueue;
 
  nvs_handle nvshandle;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 static void espnow_deinit(espnow_send_param_t *send_param);
@@ -187,7 +188,7 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
 }
 
 /* Parse received ESPNOW data. */
-int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, int *magic)
+int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, int *dir)
 {
     espnow_data_t *buf = (espnow_data_t *)data;
     uint16_t crc, crc_cal = 0;
@@ -199,7 +200,7 @@ int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t
 
     *state = buf->state;
     *seq = buf->seq_num;
-    *magic = buf->magic;
+    *dir = buf->dir;
     crc = buf->crc;
     buf->crc = 0;
     crc_cal = crc16_le(UINT16_MAX, (uint8_t const *)buf,data_len);
@@ -222,7 +223,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     buf->state = send_param->state;
     buf->seq_num = s_example_espnow_seq[buf->type]++;
     buf->crc = 0;
-    buf->magic = send_param->magic;
+    buf->dir = send_param->dir;
     buf->crc = crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 /* Task for send espnow data coming from UART*/
@@ -234,14 +235,14 @@ void espnow_send(void *pvParameter){
     send_param->broadcast = false;
     send_param->state = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
-    	printf("Send Queue activated");
-    	memcpy(send_param->dest_mac , Peer[1],ESP_NOW_ETH_ALEN);
+    	ESP_LOGI(TAG,"Send Task activated");
+    	memcpy(send_param->dest_mac , back_mac, ESP_NOW_ETH_ALEN);
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
     	espnow_data_prepare(send_param);
-    	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(Peer[1]));
-    	if (esp_now_send(Peer[1], send_param->buffer, 215) != ESP_OK) {
+    	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(send_param->dest_mac));
+    	if (esp_now_send(send_param->dest_mac, send_param->buffer, 215) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
     		vTaskDelete(NULL);
@@ -304,7 +305,10 @@ static void rpeer_espnow_task(void *pvParameter)
                 /*Verify is broadcast*/
                 ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
                 espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
-
+                if (buf->dir == FORDWARD){
+                memcpy(back_mac, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);//xxx
+                ESP_LOGI(TAG, "Back Mac is : "MACSTR"", MAC2STR(recv_cb->mac_addr));
+                }
                 free(recv_cb->data);
                 if (ret == ESPNOW_DATA_BROADCAST) {
                     ESP_LOGI(TAG, "Receive %dth broadcast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
@@ -414,7 +418,7 @@ static esp_err_t espnow_init(void)
     send_param->unicast = false;
     send_param->broadcast = true;
     send_param->state = 0;
-    send_param->magic = 0; //Maestro 1, esclavo 0
+    send_param->dir = 0; //Maestro 1, esclavo 0
     send_param->count = CONFIG_ESPNOW_SEND_COUNT;
     send_param->delay = CONFIG_ESPNOW_SEND_DELAY;
     send_param->len = CONFIG_ESPNOW_SEND_LEN;
@@ -484,7 +488,7 @@ void UARTinit(int BTid) {
     uart_set_mode(UART_NUM_1, UART_MODE_RS485_HALF_DUPLEX);
     }
 
-int uComDirection(uint8_t *Slave){
+uint8_t uComDirection(uint8_t *Slave){
 
 printf("%d",*Slave);
 	if ( *Slave <= 100){
@@ -514,11 +518,19 @@ static void rx_task(void *arg)
                 case UART_DATA:
                     ESP_LOGI(RX_TASK_TAG, "[UART DATA]: %d", event.size);
                     uart_read_bytes(UART_NUM_1, dtmp, event.size, portMAX_DELAY);
-                    int info = uComDirection(&dtmp[0]);
+                    uint8_t info = uComDirection(&dtmp[0]);
                     U_data.data = dtmp;
                     U_data.len = (uint8_t) event.size;
                     ESP_LOGI(RX_TASK_TAG,"Data recivida\n");
-                    xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
+                    switch(info){//xxx
+                    case RTU:
+                    	ESP_LOGI(TAG,"RTU");
+						break;
+                    case NODE:
+                    	xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
+                    	break;
+                    }
+
                     ESP_LOGI(RX_TASK_TAG,"Y enviada a la cola \n");
                     break;
                 //Event of HW FIFO overflow detected
