@@ -346,6 +346,27 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     buf->crc = crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 /* Task for send espnow data coming from UART*/
+void vComGetMac(uint8_t *mac,uint8_t slave , bool dir){
+	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
+	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
+	uint8_t PeerTable[PEER_TABLE_SIZE] = {0};
+	uint8_t des_node = 0;
+	vConfigGetNVS(RoutingTable,"RoutingTable");
+	vConfigGetNVS(HoldingRegister,"HoldingRegister");
+	vConfigGetNVS(PeerTable,"PeerTable");
+	des_node = RoutingTable[slave];
+	if (des_node == HoldingRegister[NodeID]){
+		memcpy(mac,back_mac,ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
+		dir = true; //back direction
+		printf("ITS AND ANSWER FROM A SLAVE TO MASTER\n");
+	}
+	else {
+		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR(mac));
+		memcpy(mac, PeerTable[des_node],ESP_NOW_ETH_ALEN); //xxx
+		//routin to obtain unknown macs
+	}
+
+}
 void espnow_send(void *pvParameter){
 	espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
 	esp_uart_data_t U_data;
@@ -354,14 +375,16 @@ void espnow_send(void *pvParameter){
     send_param->broadcast = false;
     send_param->state = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
+    	uint8_t Slave = U_data.data[0];
     	ESP_LOGI(TAG,"Send Task activated");
-    	memcpy(send_param->dest_mac , back_mac, ESP_NOW_ETH_ALEN);
+    	vComGetMac(send_param->dest_mac, Slave, buf->dir);
+ //   	memcpy(send_param->dest_mac , back_mac, ESP_NOW_ETH_ALEN);
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
     	espnow_data_prepare(send_param);
     	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(send_param->dest_mac));
-    	if (esp_now_send(send_param->dest_mac, send_param->buffer, 215) != ESP_OK) {
+    	if (esp_now_send(send_param->dest_mac, send_param->buffer, 215) != ESP_OK) {//xxx for the correct definition
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
     		vTaskDelete(NULL);
