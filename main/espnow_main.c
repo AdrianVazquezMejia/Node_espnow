@@ -161,7 +161,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){//xxx
 		}
 		if(strcmp(Name, "PeerTable") == 0){
 			sw = 3;
-			size_data =PEER_TABLE_SIZE;
+			size_data =PEER_TABLE_SIZE * ESP_NOW_ETH_ALEN;
 			}
 		switch(sw){
 
@@ -346,18 +346,18 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     buf->crc = crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 /* Task for send espnow data coming from UART*/
-void vComGetMac(uint8_t *mac,uint8_t slave , bool dir){
+void vComGetMac(uint8_t *mac,uint8_t slave ){
+
 	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-	uint8_t PeerTable[PEER_TABLE_SIZE] = {0};
+	uint8_t PeerTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
 	uint8_t des_node = 0;
 	vConfigGetNVS(RoutingTable,"RoutingTable");
 	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-	vConfigGetNVS(PeerTable,"PeerTable");
+	vConfigGetNVS(PeerTable[0],"PeerTable");
 	des_node = RoutingTable[slave];
 	if (des_node == HoldingRegister[NodeID]){
 		memcpy(mac,back_mac,ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
-		dir = true; //back direction
 		printf("ITS AND ANSWER FROM A SLAVE TO MASTER\n");
 	}
 	else {
@@ -365,7 +365,6 @@ void vComGetMac(uint8_t *mac,uint8_t slave , bool dir){
 		memcpy(mac, PeerTable[des_node],ESP_NOW_ETH_ALEN); //xxx
 		//routin to obtain unknown macs
 	}
-
 }
 void espnow_send(void *pvParameter){
 	espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
@@ -377,8 +376,11 @@ void espnow_send(void *pvParameter){
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	uint8_t Slave = U_data.data[0];
     	ESP_LOGI(TAG,"Send Task activated");
-    	vComGetMac(send_param->dest_mac, Slave, buf->dir);
- //   	memcpy(send_param->dest_mac , back_mac, ESP_NOW_ETH_ALEN);
+    	vComGetMac(send_param->dest_mac, Slave);
+    	buf->dir = FORDWARD;
+    	if(strcmp((const char*)send_param->dest_mac , (const char*)back_mac) == 0)
+    		buf->dir = BACKWARD;
+
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
@@ -392,25 +394,26 @@ void espnow_send(void *pvParameter){
     }
     vTaskDelete(NULL);
 }
-uint16_t uComGetTransData(int i){
+uint16_t uComGetTransData(int slave){
 
-    uint8_t HoldingRegister[200] ={0}; // value will default to 0, if not set yet in NVS
+    uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
 	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-	if (HoldingRegister[NodeID] == i) {
-		ESP_LOGI(TAG, "The informations is for ME! node %d", i);
-		return 255;//xxx
-	}
-
     uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
 	vConfigGetNVS(RoutingTable,"RoutingTable");
-	int r = RoutingTable[i];
-	if (r == HoldingRegister[NodeID]){
-		ESP_LOGI(TAG, "The informations is for my RTU! RTU %d", i);
-		return 256;
+	uint8_t des_slave = RoutingTable[slave];
+	if (HoldingRegister[NodeID] == slave) {
+		ESP_LOGI(TAG, "The informations is for ME! node %d\n", slave);
+		return NODECONFIG;//xxx
 	}
-	ESP_LOGI(TAG, "The informations is NOT for ME! node %d to node %d", i, r);
-
-	return r;
+	else if (des_slave == HoldingRegister[NodeID]){
+			ESP_LOGI(TAG, "The informations is for my RTU! RTU %d\n", slave);
+			return SERIAL;
+	}
+	else {
+		ESP_LOGI(TAG, "The informations is NOT for ME! node %d to node %d\n", slave, des_slave);
+		return JUMP;
+	}
+	return -1;
 }
 void vConfigSetNode(esp_uart_data_t data){
 	uint8_t function = data.data[1];
@@ -556,18 +559,16 @@ static void rpeer_espnow_task(void *pvParameter)
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 					U_data.data=buf->payload;
 					U_data.len = buf ->data_len;
-					int i = U_data.data[0];
-					int r = uComGetTransData(i);
-
-					if (r == 255 ){
-						ESP_LOGI(TAG,"Function to load my config");//xxx
+					uint8_t slave = U_data.data[0];
+					uint8_t mode = uComGetTransData(slave);
+					switch(mode){
+					case SERIAL:
+						uart_write_bytes(UART_NUM_1,(const char*) U_data.data ,U_data.len);
+					case NODECONFIG:
+						vConfigSetNode(U_data);
+					case JUMP:
+						xQueueSend(espnow_queue, &U_data, portMAX_DELAY);
 					}
-					else if (256)
-					uart_write_bytes(UART_NUM_1, (const char*) U_data.data, U_data.len);
-
-					else
-						ESP_LOGI(TAG,"Queue to espnow send");
-
                 }
                 else{
                     ESP_LOGI(TAG, "Receive error data from: "MACSTR"  con ret : %d " , MAC2STR(recv_cb->mac_addr),ret);

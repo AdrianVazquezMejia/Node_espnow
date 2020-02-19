@@ -71,6 +71,12 @@ enum{
 
 };
 
+enum{
+	SERIAL,
+	NODECONFIG,
+	JUMP
+};
+
 typedef union
 {
     uint16_t Val;
