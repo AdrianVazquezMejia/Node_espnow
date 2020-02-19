@@ -61,7 +61,21 @@ enum{
 	FORDWARD = 0,
 	BACKWARD
 };
+enum{
+	COIL =5,
+	HOLDING_REGISTER
+};
 
+typedef union
+{
+    uint16_t Val;
+    struct
+    {
+        uint8_t LB;
+        uint8_t HB;
+    } byte;
+
+} INT_VAL;
 /* User defined field of ESPNOW data in this example. */
 typedef struct {
     uint8_t type;                         //Broadcast or unicast ESPNOW data.

@@ -60,6 +60,7 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "soc/uart_struct.h"
 #include "string.h"
 #include "espnow.h"
+#include "CRC.h"
 
 
 
@@ -83,11 +84,13 @@ static const int TX_BUF_SIZE = 1024;
 #define DEFAULT_BR 8 //115200
 #define ROUTING_TABLE_SIZE 255
 #define PEER_TABLE_SIZE 100
-#define HOLDING_REGISTER_SIZE 200
+#define HOLDING_REGISTER_SIZE 1000
 #define NODE 0
 #define RTU 1
 
-static const char *TAG = "espnow_example";
+static const char *TAG = "espnow";
+static const char *TAG_MB = "espnow";
+
  //Queue definitions
 
 static xQueueHandle espnow_queue;
@@ -140,7 +143,75 @@ static void wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
 #endif
 }
-void vConfigGetNVS(uint8_t *Array , const char *Name){
+void vConfigGetNVS(uint8_t *Array , const char *Name){//xxx
+    esp_err_t err = nvs_flash_init();
+	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
+    if (err != ESP_OK) {
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+    } else {
+		printf("Reading Config from NVS ...\n ");
+		size_t size_data = 0;
+		int sw = 0;
+		if(strcmp(Name, "HoldingRegister") == 0){
+			sw = 1;
+			size_data =HOLDING_REGISTER_SIZE;
+		}
+		if(strcmp(Name, "RoutingTable") == 0){
+			sw = 2;
+			size_data =ROUTING_TABLE_SIZE;
+		}
+		if(strcmp(Name, "PeerTable") == 0){
+			sw = 3;
+			size_data =PEER_TABLE_SIZE;
+			}
+		switch(sw){
+
+			case 1:
+			err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
+					switch (err) {
+						case ESP_OK:
+							printf("Config Holding Register loaded: %d BR and ID %d\n",Array[BaudaRate],Array[NodeID] );
+							break;
+						case ESP_ERR_NVS_NOT_FOUND:
+							printf("The value is not initialized yet!\n");
+							break;
+						default :
+							printf("Error (%s) reading!\n", esp_err_to_name(err));
+					}
+					break;
+
+			case 2:
+			err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
+			switch (err) {
+				case ESP_OK:
+					printf("Config RoutingTable loaded\n");
+					break;
+				case ESP_ERR_NVS_NOT_FOUND:
+					printf("The RT is not initialized yet!\n");
+					break;
+				default :
+					printf("Error (%s) reading!\n", esp_err_to_name(err));
+			}
+			break;
+
+			case 3:
+			err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
+			switch (err) {
+				case ESP_OK:
+					printf("Peer Table loaded\n");
+					break;
+				case ESP_ERR_NVS_NOT_FOUND:
+					printf("The Peer Table is not initialized yet!\n");
+					break;
+				default :
+					printf("Error (%s) reading!\n", esp_err_to_name(err));
+			}
+			break;
+		}
+		nvs_close(nvshandle);
+    }
+}
+void vConfigSetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
     printf("Reading Config from NVS ...\n ");
@@ -161,48 +232,35 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
     switch(sw){
 
     	case 1:
-    	err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
-		        switch (err) {
-		            case ESP_OK:
-		                printf("Config Holding Register loaded: %d BR and ID %d\n",Array[BaudaRate],Array[NodeID] );
-		                break;
-		            case ESP_ERR_NVS_NOT_FOUND:
-		                printf("The value is not initialized yet!\n");
-		                break;
-		            default :
-		                printf("Error (%s) reading!\n", esp_err_to_name(err));
-		        }
-		        break;
+	        printf("Updating HR in NVS ... \n");
+	        err = nvs_set_blob(nvshandle, "HoldingRegister", Array,size_data);
+	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+		    break;
 
 		case 2:
-		err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
-		switch (err) {
-			case ESP_OK:
-				printf("Config RoutingTable loaded\n");
-				break;
-			case ESP_ERR_NVS_NOT_FOUND:
-				printf("The RT is not initialized yet!\n");
-				break;
-			default :
-				printf("Error (%s) reading!\n", esp_err_to_name(err));
-		}
-		break;
+	        printf("Updating RT in NVS ... \n");
+	        err = nvs_set_blob(nvshandle, "RoutingTable", Array,size_data);
+	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+	        break;
 
 		case 3:
-		err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
-		switch (err) {
-			case ESP_OK:
-				printf("Config Peer Table loaded\n");
-				break;
-			case ESP_ERR_NVS_NOT_FOUND:
-				printf("The Peer Table is not initialized yet!\n");
-				break;
-			default :
+	        printf("Updating HR in NVS ... \n");
+	        err = nvs_set_blob(nvshandle, "PeerTable", Array,size_data);
+	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+	        break;
+		default :
 				printf("Error (%s) reading!\n", esp_err_to_name(err));
-		}
-		break;
+				break;
     }
+
+    printf("Committing updates in NVS ... ");
+    err = nvs_commit(nvshandle);
+    printf((err != ESP_OK) ? "Failed!\n" : "Config Done\n");
+
+    // Close
+    nvs_close(nvshandle);
 }
+
 /* ESPNOW sending or receiving callback function is called in WiFi task.
  * Users should not do lengthy operations from this task. Instead, post
  * necessary data to a queue and handle it from a lower priority task. */
@@ -331,6 +389,51 @@ uint16_t uComGetTransData(int i){
 	ESP_LOGI(TAG, "The informations is NOT for ME! node %d to node %d", i, r);
 
 	return r;
+}
+void vConfigSetNode(esp_uart_data_t data){
+	uint8_t function = data.data[1];
+	INT_VAL Address;
+	Address.byte.HB = data.data[2];
+	Address.byte.LB = data.data[3];
+	INT_VAL Value;
+	Value.byte.HB = data.data[4];
+	Value.byte.LB = data.data[5];
+	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
+	uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
+	vConfigGetNVS(HoldingRegister,"HoldingRegister");
+	vConfigGetNVS(RoutingTable,"RoutingTable");
+	uint16_t offset = 256;
+	//xxx
+	//verificar crc
+
+	if (CRC16(data.data,data.len) == 0){
+	switch(function){
+	case HOLDING_REGISTER:
+		if (Address.Val == 0 && Value.Val <=100){
+			printf("Node Id not allowed, must be greater than 100\n");
+			break;
+		}
+
+		HoldingRegister[Address.Val] = Value.Val;
+		vConfigSetNVS(HoldingRegister,"HoldingRegister");
+		if(Address.Val >=256){
+			memcpy(RoutingTable, HoldingRegister+offset, offset);
+			vConfigSetNVS(RoutingTable,"RoutingTable");
+		}
+		printf( "Modifing Holding Register, Value %d  position %d",HoldingRegister[Address.Val],Address.Val);
+		break;
+
+	case COIL:
+		printf("Make some coil function stuff\n");
+
+
+		break;
+	}
+
+}
+	else ESP_LOGE(TAG_MB," CRC ERROR is %4x", CRC16(data.data,data.len));
+	//xxx
+	// Send a echo back, either espnow or serial
 }
 static void rpeer_espnow_task(void *pvParameter)
 {
@@ -589,8 +692,10 @@ printf("%d",*Slave);
 	return -1;
 }
 
-static void rx_task(void *arg)
-{
+static void rx_task(void *arg){
+	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
+	vConfigGetNVS(HoldingRegister,"HoldingRegister");//xxx
+    UARTinit(HoldingRegister[BaudaRate]);
     uart_event_t event;
     uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
     static const char *RX_TASK_TAG = "RX_TASK";
@@ -615,7 +720,8 @@ static void rx_task(void *arg)
                     	xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
 						break;
                     case NODE:
-                    	ESP_LOGI(TAG,"RTU");
+                    	ESP_LOGI(RX_TASK_TAG,"Node");
+                    	vConfigSetNode(U_data);
                     	break;
                     }
 
@@ -663,6 +769,8 @@ static void rx_task(void *arg)
 }
 void vConfigLoad(){
     esp_err_t err = nvs_flash_init();
+    printf("IM HERE/n");
+
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
 	    if (err != ESP_OK) {
 	        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
@@ -671,7 +779,7 @@ void vConfigLoad(){
 
 	        // Read
 	        printf("Reading Config from NVS ...\n ");//xxx
-	        uint8_t HoldingRegister[200] ={0}; // value will default to 0, if not set yet in NVS
+	        uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
 	        size_t size_data = sizeof(HoldingRegister);
 
 	        uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
@@ -760,16 +868,13 @@ void app_main()
         ESP_ERROR_CHECK( nvs_flash_erase() );
         ret = nvs_flash_init();
     }
+    //nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
     esp_log_level_set(TAG, ESP_LOG_INFO);
-    uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
+
     vConfigLoad();
-    vConfigGetNVS(HoldingRegister,"HoldingRegister");//xxx
-
-
-    UARTinit(HoldingRegister[BaudaRate]);
     // Create UART tasks
-    xTaskCreate(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
+    xTaskCreate(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL);
 
     //Create ESPnow Tasks
     wifi_init();
