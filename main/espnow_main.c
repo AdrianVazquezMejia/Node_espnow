@@ -85,8 +85,7 @@ static const int TX_BUF_SIZE = 1024;
 #define ROUTING_TABLE_SIZE 255
 #define PEER_TABLE_SIZE 100
 #define HOLDING_REGISTER_SIZE 1000
-#define NODE 0
-#define RTU 1
+
 
 static const char *TAG = "espnow";
 static const char *TAG_MB = "espnow";
@@ -420,7 +419,7 @@ void vConfigSetNode(esp_uart_data_t data){
 			memcpy(RoutingTable, HoldingRegister+offset, offset);
 			vConfigSetNVS(RoutingTable,"RoutingTable");
 		}
-		printf( "Modifing Holding Register, Value %d  position %d",HoldingRegister[Address.Val],Address.Val);
+		printf( "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
 		break;
 
 	case COIL:
@@ -680,15 +679,17 @@ void UARTinit(int BTid) {
     }
 
 uint8_t uComDirection(uint8_t *Slave){
-
+uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
+vConfigGetNVS(HoldingRegister , "HoldingRegister");
 printf("%d",*Slave);
-	if ( *Slave <= 100){
-		ESP_LOGI(TAG,"Direction is RTU");
-		return RTU;}
-	else if(*Slave > 100) {
-		ESP_LOGI(TAG,"Direction is NODE");
+	if (HoldingRegister[NodeID] == *Slave){
+		printf("ITS FOR ME!\n");
 		return NODE;
-	}
+		}
+		else{
+			printf("ITS FOR OTHER :-(!\n");
+			return EX_SLAVE;
+		}
 	return -1;
 }
 
@@ -716,15 +717,16 @@ static void rx_task(void *arg){
                     U_data.len = (uint8_t) event.size;
                     ESP_LOGI(RX_TASK_TAG,"Data recivida\n");
                     switch(info){//xxx
-                    case RTU:
+                    case EX_SLAVE:
+                    	// Query of response BACK
                     	xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
 						break;
                     case NODE:
+                    	// TO ME
                     	ESP_LOGI(RX_TASK_TAG,"Node");
                     	vConfigSetNode(U_data);
                     	break;
                     }
-
                     ESP_LOGI(RX_TASK_TAG,"Y enviada a la cola \n");
                     break;
                 //Event of HW FIFO overflow detected
@@ -875,7 +877,8 @@ void app_main()
     vConfigLoad();
     // Create UART tasks
     xTaskCreate(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL);
-
+    uint8_t ex[8] = {0xff, 0x06, 0x01, 0x00, 0x00, 0xc8, 0x9c, 0x7e};
+    printf("CRC  is : %4x \n", CRC16(ex,8));
     //Create ESPnow Tasks
     wifi_init();
     espnow_init();

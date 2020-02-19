@@ -65,6 +65,11 @@ enum{
 	COIL =5,
 	HOLDING_REGISTER
 };
+enum{
+	EX_SLAVE,
+	NODE,
+
+};
 
 typedef union
 {
