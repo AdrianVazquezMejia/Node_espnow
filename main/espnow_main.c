@@ -346,8 +346,8 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     buf->crc = crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 /* Task for send espnow data coming from UART*/
-void vComGetMac(uint8_t *mac,uint8_t slave ){
-
+void vComGetMac(uint8_t **mac,uint8_t slave ){
+	*mac = malloc(ESP_NOW_ETH_ALEN);
 	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
 	uint8_t PeerTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
@@ -357,12 +357,12 @@ void vComGetMac(uint8_t *mac,uint8_t slave ){
 	vConfigGetNVS(PeerTable[0],"PeerTable");
 	des_node = RoutingTable[slave];
 	if (des_node == HoldingRegister[NodeID]){
-		memcpy(mac,back_mac,ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
+		memcpy((*mac),back_mac,ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
 		printf("ITS AND ANSWER FROM A SLAVE TO MASTER\n");
 	}
 	else {
-		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR(mac));
-		memcpy(mac, PeerTable[des_node],ESP_NOW_ETH_ALEN); //xxx
+		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR((*mac)));
+		memcpy((*mac), PeerTable[des_node],ESP_NOW_ETH_ALEN); //xxx
 		//routin to obtain unknown macs
 	}
 }
@@ -376,9 +376,11 @@ void espnow_send(void *pvParameter){
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	uint8_t Slave = U_data.data[0];
     	ESP_LOGI(TAG,"Send Task activated");
-    	vComGetMac(send_param->dest_mac, Slave);
+
+    	vComGetMac(&send_param->dest_mac, Slave);
+    	free(send_param->dest_mac);
     	buf->dir = FORDWARD;
-    	if(strcmp((const char*)send_param->dest_mac , (const char*)back_mac) == 0)
+    	if(memcmp(send_param->dest_mac ,back_mac, ESP_NOW_ETH_ALEN ) == 0)
     		buf->dir = BACKWARD;
 
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
