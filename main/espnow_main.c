@@ -84,7 +84,7 @@ static const int TX_BUF_SIZE = 1024;
 #define DEFAULT_BR 8 //115200
 #define ROUTING_TABLE_SIZE 255
 #define PEER_TABLE_SIZE 100
-#define HOLDING_REGISTER_SIZE 1000
+#define HOLDING_REGISTER_SIZE 512
 
 
 static const char *TAG = "espnow";
@@ -144,6 +144,7 @@ static void wifi_init(void)
 }
 void vConfigGetNVS(uint8_t *Array , const char *Name){//xxx
     esp_err_t err = nvs_flash_init();
+
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
     if (err != ESP_OK) {
         printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
@@ -166,7 +167,8 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){//xxx
 		switch(sw){
 
 			case 1:
-			err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
+
+				err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
 					switch (err) {
 						case ESP_OK:
 							printf("Config Holding Register loaded: %d BR and ID %d\n",Array[BaudaRate],Array[NodeID] );
@@ -180,6 +182,8 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){//xxx
 					break;
 
 			case 2:
+
+
 			err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
 			switch (err) {
 				case ESP_OK:
@@ -350,7 +354,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 	*mac = malloc(ESP_NOW_ETH_ALEN);
 	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-	uint8_t PeerTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
+	uint8_t RoutingTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
 	uint8_t des_node = 0;
 	vConfigGetNVS(RoutingTable,"RoutingTable");
 	vConfigGetNVS(HoldingRegister,"HoldingRegister");
@@ -390,7 +394,6 @@ void espnow_send(void *pvParameter){
     		printf("ITS AND ANSWER FROM A SLAVE TO MASTER, RT: %d , slave: %d\n", RoutingTable[U_data.data[0]],U_data.data[0]);
     	}
     	else {
-    		memcpy(send_param->dest_mac, PeerTable[des_node],ESP_NOW_ETH_ALEN); //xxx
     		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR((send_param->dest_mac)));
     		memcpy(send_param->dest_mac, PeerTable[des_node],ESP_NOW_ETH_ALEN); //xxx
     		//routine to obtain unknown macs
@@ -404,7 +407,7 @@ void espnow_send(void *pvParameter){
     	buf->data_len = U_data.len;
     	espnow_data_prepare(send_param);
     	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(send_param->dest_mac));
-    	if (esp_now_send(send_param->dest_mac, send_param->buffer, 215) != ESP_OK) {//xxx for the correct definition
+    	if (esp_now_send(send_param->dest_mac, send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
     		vTaskDelete(NULL);
@@ -439,6 +442,7 @@ void vConfigSetNode(esp_uart_data_t data){
 	Address.byte.HB = data.data[2];
 	Address.byte.LB = data.data[3];
 	INT_VAL Value;
+	INT_VAL CRC;
 	Value.byte.HB = data.data[4];
 	Value.byte.LB = data.data[5];
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
@@ -446,12 +450,10 @@ void vConfigSetNode(esp_uart_data_t data){
 	vConfigGetNVS(HoldingRegister,"HoldingRegister");
 	vConfigGetNVS(RoutingTable,"RoutingTable");
 	uint16_t offset = 256;
-	//xxx
-	//verificar crc
 
 	if (CRC16(data.data,data.len) == 0){
 	switch(function){
-	case HOLDING_REGISTER:
+	case WRITE_HOLDING_REGISTER:
 		if (Address.Val == 0 && Value.Val <=100){
 			printf("Node Id not allowed, must be greater than 100\n");
 			break;
@@ -464,19 +466,37 @@ void vConfigSetNode(esp_uart_data_t data){
 			vConfigSetNVS(RoutingTable,"RoutingTable");
 		}
 		printf( "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
+		uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 		break;
 
-	case COIL:
+	case WRITE_COIL:
 		printf("Make some coil function stuff\n");
-
-
 		break;
+
+	case READ_HOLDING:
+		printf("ReadingHoldingRegister\n");
+		data.data[2] = data.data[5]*2;//xxx what if greater than ff number of bytes
+		uint8_t inc =3;
+		for(uint8_t i = 0; i == data.data[5]; i++){
+			data.data[inc] = 0;
+			inc++;
+			data.data[inc] =HoldingRegister[Address.Val+i];
+			inc++;
+		}
+		CRC.Val = CRC16(data.data,inc);
+		data.data[inc] = CRC.byte.LB;
+		inc++;
+		data.data[inc] = CRC.byte.HB;
+		data.len = inc++;
+		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
 	}
 
 }
 	else ESP_LOGE(TAG_MB," CRC ERROR is %4x", CRC16(data.data,data.len));
+	uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len-2);//xxx Create and exceptions
 	//xxx
 	// Send a echo back, either espnow or serial
+	uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 }
 static void rpeer_espnow_task(void *pvParameter)
 {
@@ -919,8 +939,8 @@ void app_main()
     vConfigLoad();
     // Create UART tasks
     xTaskCreate(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL);
-    uint8_t ex[8] = {0xff, 0x06, 0x01, 0x00, 0x00, 0xc8, 0x9c, 0x7e};
-    printf("CRC  is : %4x \n", CRC16(ex,8));
+    //uint8_t ex[8] = {0xff, 0x06, 0x01, 0x00, 0x00, 0xc8, 0x9c, 0x7e};
+   // printf("CRC  is : %4x \n", CRC16(ex,8));
     //Create ESPnow Tasks
     wifi_init();
     espnow_init();

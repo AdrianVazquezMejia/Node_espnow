@@ -62,8 +62,12 @@ enum{
 	BACKWARD
 };
 enum{
-	COIL =5,
-	HOLDING_REGISTER
+	WRITE_COIL =5,
+	WRITE_HOLDING_REGISTER
+};
+enum{
+	READ_HOLDING =3,
+
 };
 enum{
 	EX_SLAVE,
@@ -94,6 +98,7 @@ typedef struct {
     uint16_t seq_num;                     //Sequence number of ESPNOW data.
     uint16_t crc;                         //CRC16 value of ESPNOW data.
     uint32_t dir;                       //Magic number which is used to determine which device to send unicast ESPNOW data.
+    uint8_t NodeID;
     uint8_t payload[200];
     uint8_t data_len;//Real payload of ESPNOW data.
 } __attribute__((packed)) espnow_data_t;
