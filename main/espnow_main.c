@@ -91,8 +91,8 @@ static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 //static uint8_t Node1_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xf3, 0x04};
 //static uint8_t Node2_mac[ESP_NOW_ETH_ALEN] = { 0x24 , 0x6f , 0x28 ,0x24 , 0xac, 0x74};
 //static uint8_t Node0_mac[ESP_NOW_ETH_ALEN] = { 0xd8 , 0xa0 , 0x1d ,0x69 , 0xe9, 0xf0};
-static uint8_t Node0_mac[ESP_NOW_ETH_ALEN] = {0xbc,0xdd,0xc2,0xd4,0xad,0xb4};
-
+//static uint8_t Node0_mac[ESP_NOW_ETH_ALEN] = {0xbc,0xdd,0xc2,0xd4,0xad,0xb4};
+static uint8_t Node0_mac[ESP_NOW_ETH_ALEN] = {0xd8,0xa0,0x1d,0x69,0xe9,0xf0};
 
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
@@ -434,7 +434,7 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 
 void UARTinit(void) {
     const uart_config_t uart_config = {
-        .baud_rate = 115200,
+        .baud_rate = 1200,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
