@@ -83,8 +83,8 @@ static const int TX_BUF_SIZE = 1024;
 #define BaudaRate 1
 #define DEFAULT_BR 8 //115200
 #define ROUTING_TABLE_SIZE 255
-#define PEER_TABLE_SIZE 100
-#define HOLDING_REGISTER_SIZE 512
+#define PEER_TABLE_SIZE 255
+#define HOLDING_REGISTER_SIZE 513
 
 
 static const char *TAG = "espnow";
@@ -142,7 +142,7 @@ static void wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
 #endif
 }
-void vConfigGetNVS(uint8_t *Array , const char *Name){//xxx
+void vConfigGetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
@@ -230,7 +230,7 @@ void vConfigSetNVS(uint8_t *Array , const char *Name){
     }
     if(strcmp(Name, "PeerTable") == 0){
     	sw = 3;
-    	size_data = (size_t)PEER_TABLE_SIZE;
+    	size_data = (size_t)(PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
         }
     switch(sw){
 
@@ -340,9 +340,11 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 {
     espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
     assert(send_param->len >= sizeof(espnow_data_t));
-
+    uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
+    vConfigGetNVS(HoldingRegister,"HoldingRegister");
+    buf->Nodeid = HoldingRegister[NodeID];
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
-    printf("type is: %d ", buf->type);
+    //printf("type is: %d ", buf->type);//xxx
     buf->state = send_param->state;
     buf->seq_num = s_example_espnow_seq[buf->type]++;
     buf->crc = 0;
@@ -379,7 +381,7 @@ void espnow_send(void *pvParameter){
     send_param->state = 0;
 	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-	uint8_t PeerTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
+	uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] = {0};
 	uint8_t des_node = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	ESP_LOGI(TAG,"Send Task activated");
@@ -387,21 +389,19 @@ void espnow_send(void *pvParameter){
 
     	vConfigGetNVS(RoutingTable,"RoutingTable");
     	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-    	vConfigGetNVS(PeerTable[0],"PeerTable");
+    	vConfigGetNVS(PeerTable,"PeerTable");
     	des_node = RoutingTable[U_data.data[0]];
     	if (des_node == HoldingRegister[NodeID]){
     		memcpy(send_param->dest_mac,back_mac,ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
     		printf("ITS AND ANSWER FROM A SLAVE TO MASTER, RT: %d , slave: %d\n", RoutingTable[U_data.data[0]],U_data.data[0]);
     	}
     	else {
+    		memcpy(send_param->dest_mac, PeerTable ,ESP_NOW_ETH_ALEN); //xxx
     		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR((send_param->dest_mac)));
-    		memcpy(send_param->dest_mac, PeerTable[des_node],ESP_NOW_ETH_ALEN); //xxx
-    		//routine to obtain unknown macs
     	}
     	buf->dir = FORDWARD;
     	if(memcmp(send_param->dest_mac ,back_mac, ESP_NOW_ETH_ALEN ) == 0)
     		buf->dir = BACKWARD;
-
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
@@ -474,29 +474,37 @@ void vConfigSetNode(esp_uart_data_t data){
 		break;
 
 	case READ_HOLDING:
-		printf("ReadingHoldingRegister\n");
+		printf("Reading HoldingRegister\n");
 		data.data[2] = data.data[5]*2;//xxx what if greater than ff number of bytes
 		uint8_t inc =3;
-		for(uint8_t i = 0; i == data.data[5]; i++){
+		uint8_t data_limit = data.data[5];
+		printf("El numero de bytes is %d  y la direccion de inicio es %d\n", data_limit, Address.Val);
+		int i = 0;
+		while( i < data_limit){
 			data.data[inc] = 0;
 			inc++;
 			data.data[inc] =HoldingRegister[Address.Val+i];
+			printf("inc is %d\n", inc);
 			inc++;
+
+			i++;
+			printf("inc is %d\n", inc);
 		}
 		CRC.Val = CRC16(data.data,inc);
 		data.data[inc] = CRC.byte.LB;
 		inc++;
 		data.data[inc] = CRC.byte.HB;
-		data.len = inc++;
+		data.len= ++inc;
+		printf("AQUI %d bytes limit \n",inc);
 		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
 	}
 
 }
 	else ESP_LOGE(TAG_MB," CRC ERROR is %4x", CRC16(data.data,data.len));
-	uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len-2);//xxx Create and exceptions
+	//uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len-2);//xxx Create and exceptions
 	//xxx
 	// Send a echo back, either espnow or serial
-	uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+	//uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 }
 static void rpeer_espnow_task(void *pvParameter)
 {
@@ -512,12 +520,16 @@ static void rpeer_espnow_task(void *pvParameter)
     ESP_LOGI(TAG, "Start sending broadcast data");
 
     /* Start sending broadcast ESPNOW data. */
+
     espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
+    uint8_t PeerTable[PEER_TABLE_SIZE * ESP_NOW_ETH_ALEN]= {0};
+    espnow_data_prepare(send_param);
     if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
         ESP_LOGE(TAG, "Send error");
         espnow_deinit(send_param);
         vTaskDelete(NULL);
     }
+	xTaskCreate(espnow_send, "espnow_send", 2048*4, send_param, 3, NULL);
     while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {
         switch (evt.id) {
             case ESPNOW_SEND_CB:
@@ -541,9 +553,6 @@ static void rpeer_espnow_task(void *pvParameter)
                     vTaskDelete(NULL);
                 }
                 /*Create the tasks for communication with UART*/
-                if (count == 0){
-                	xTaskCreate(espnow_send, "espnow_send", 2048*2, send_param, 3, NULL);
-                }
                 break;
             }
             case ESPNOW_RECV_CB:
@@ -581,17 +590,21 @@ static void rpeer_espnow_task(void *pvParameter)
                         ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(Peer[1]));
                         free(peer);
                         /* Send the response to the new peer, for register myself with it*/
-                        if (count==0) {
+
+                        espnow_data_prepare(send_param);
                         send_param->unicast = false;
                         send_param->broadcast = true;
                         if (esp_now_send(broadcast_mac, send_param->buffer, send_param->len) != ESP_OK) {
                             ESP_LOGE(TAG, "Send error");
                             espnow_deinit(send_param);
                             vTaskDelete(NULL);
-                        }
+
                         send_param->unicast = true;
                         send_param->broadcast = false;
-                    }}
+                       }
+                        vConfigGetNVS(PeerTable,"PeerTable");
+                        memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
+                    }
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
@@ -685,7 +698,7 @@ static esp_err_t espnow_init(void)
     memcpy(send_param->dest_mac, broadcast_mac, ESP_NOW_ETH_ALEN);
     espnow_data_prepare(send_param);
 
-    xTaskCreate(rpeer_espnow_task, "register_peer", 2048, send_param, 4, NULL);
+    xTaskCreate(rpeer_espnow_task, "register_peer", 2048*2, send_param, 4, NULL);
     return ESP_OK;
 }
 
@@ -757,7 +770,7 @@ printf("%d",*Slave);
 
 static void rx_task(void *arg){
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-	vConfigGetNVS(HoldingRegister,"HoldingRegister");//xxx
+	vConfigGetNVS(HoldingRegister,"HoldingRegister");
     UARTinit(HoldingRegister[BaudaRate]);
     uart_event_t event;
     uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
@@ -778,7 +791,7 @@ static void rx_task(void *arg){
                     U_data.data = dtmp;
                     U_data.len = (uint8_t) event.size;
                     ESP_LOGI(RX_TASK_TAG,"Data recivida\n");
-                    switch(info){//xxx
+                    switch(info){
                     case EX_SLAVE:
                     	// Query of response BACK
                     	xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
@@ -842,19 +855,19 @@ void vConfigLoad(){
 	        printf("Done\n");
 
 	        // Read
-	        printf("Reading Config from NVS ...\n ");//xxx
+	        printf("Reading Config from NVS ...\n ");
 	        uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
 	        size_t size_data = sizeof(HoldingRegister);
 
 	        uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
 	        size_t size_RT = sizeof(RoutingTable);
 
-	        uint8_t PeerTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
+	        uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
 	        size_t size_Peer = sizeof(PeerTable);
-
+	        memset(PeerTable,255, size_Peer);
 	        HoldingRegister[NodeID]= DEFAULT_ID;
 	        HoldingRegister[BaudaRate]= DEFAULT_BR;
-
+	        uint8_t Peer[6];
 
 	        err = nvs_get_blob(nvshandle, "HoldingRegister", HoldingRegister, &size_data);
 	        switch (err) {
@@ -901,7 +914,6 @@ void vConfigLoad(){
 	        printf("Updating RT in NVS ... \n");
 	        err = nvs_set_blob(nvshandle, "RoutingTable", RoutingTable,size_RT);
 	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-
 	        printf("Updating PT in NVS ... \n");
 	        err = nvs_set_blob(nvshandle, "PeerTable", PeerTable,size_Peer);
 	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
@@ -932,16 +944,17 @@ void app_main()
         ESP_ERROR_CHECK( nvs_flash_erase() );
         ret = nvs_flash_init();
     }
-    //nvs_flash_erase();
+   // nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
     vConfigLoad();
-    // Create UART tasks
+   // Create UART tasks
     xTaskCreate(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL);
     //uint8_t ex[8] = {0xff, 0x06, 0x01, 0x00, 0x00, 0xc8, 0x9c, 0x7e};
    // printf("CRC  is : %4x \n", CRC16(ex,8));
     //Create ESPnow Tasks
+
     wifi_init();
     espnow_init();
 
