@@ -497,8 +497,7 @@ void vConfigSetNode(esp_uart_data_t data){
 		data.len= ++inc;
 		printf("AQUI %d bytes limit \n",inc);
 		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
-	}
-
+		break;
 	default :
 		data.data[1]+= 0x80;
 		data.data[2] = 0x01;
@@ -506,6 +505,9 @@ void vConfigSetNode(esp_uart_data_t data){
 		data.data[3] = CRC.byte.LB;
 		data.data[4] = CRC.byte.HB;
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
+	}
+
+
 
 }
 	else {
@@ -880,7 +882,7 @@ void vConfigLoad(){
 	        memset(PeerTable,255, size_Peer);
 	        HoldingRegister[NodeID]= DEFAULT_ID;
 	        HoldingRegister[BaudaRate]= DEFAULT_BR;
-	        uint8_t Peer[6];
+
 
 	        err = nvs_get_blob(nvshandle, "HoldingRegister", HoldingRegister, &size_data);
 	        switch (err) {
