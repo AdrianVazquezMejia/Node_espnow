@@ -344,7 +344,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     vConfigGetNVS(HoldingRegister,"HoldingRegister");
     buf->Nodeid = HoldingRegister[NodeID];
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
-    //printf("type is: %d ", buf->type);//xxx
+
     buf->state = send_param->state;
     buf->seq_num = s_example_espnow_seq[buf->type]++;
     buf->crc = 0;
@@ -424,7 +424,7 @@ uint16_t uComGetTransData(int slave){
 	uint8_t des_slave = RoutingTable[slave];
 	if (HoldingRegister[NodeID] == slave) {
 		ESP_LOGI(TAG, "The informations is for ME! node %d\n", slave);
-		return NODECONFIG;//xxx
+		return NODECONFIG;
 	}
 	else if (des_slave == HoldingRegister[NodeID]){
 			ESP_LOGI(TAG, "The informations is for my RTU! RTU %d\n", slave);
@@ -501,10 +501,13 @@ void vConfigSetNode(esp_uart_data_t data){
 
 }
 	else ESP_LOGE(TAG_MB," CRC ERROR is %4x", CRC16(data.data,data.len));
-	//uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len-2);//xxx Create and exceptions
-	//xxx
-	// Send a echo back, either espnow or serial
-	//uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+	data.data[1]+=0x80;
+	data.data[2] = 0x08;
+	CRC.Val = CRC16(data.data,3);
+	data.data[3] = CRC.byte.LB;
+	data.data[4] = CRC.byte.HB;
+	uart_write_bytes(UART_NUM_1,(const char*)data.data,5);//xxx Create and exceptions
+
 }
 static void rpeer_espnow_task(void *pvParameter)
 {
