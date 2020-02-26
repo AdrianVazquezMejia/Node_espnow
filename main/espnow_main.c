@@ -422,6 +422,7 @@ uint16_t uComGetTransData(int slave){
     uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
 	vConfigGetNVS(RoutingTable,"RoutingTable");
 	uint8_t des_slave = RoutingTable[slave];
+	ESP_LOGI(TAG, "The informations is for %d or %d \n", des_slave,RoutingTable[0]);
 	if (HoldingRegister[NodeID] == slave) {
 		ESP_LOGI(TAG, "The informations is for ME! node %d\n", slave);
 		return NODECONFIG;
@@ -462,7 +463,7 @@ void vConfigSetNode(esp_uart_data_t data){
 		HoldingRegister[Address.Val] = Value.Val;
 		vConfigSetNVS(HoldingRegister,"HoldingRegister");
 		if(Address.Val >=256){
-			memcpy(RoutingTable, HoldingRegister+offset, offset);
+			RoutingTable[Address.Val-offset] = HoldingRegister[Address.Val];
 			vConfigSetNVS(RoutingTable,"RoutingTable");
 		}
 		printf( "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
@@ -484,11 +485,11 @@ void vConfigSetNode(esp_uart_data_t data){
 			data.data[inc] = 0;
 			inc++;
 			data.data[inc] =HoldingRegister[Address.Val+i];
-			printf("inc is %d\n", inc);
+			//printf("inc is %d\n", inc);
 			inc++;
 
 			i++;
-			printf("inc is %d\n", inc);
+			//printf("inc is %d\n", inc);
 		}
 		CRC.Val = CRC16(data.data,inc);
 		data.data[inc] = CRC.byte.LB;
@@ -619,6 +620,8 @@ static void rpeer_espnow_task(void *pvParameter)
                        }
                         vConfigGetNVS(PeerTable,"PeerTable");
                         memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
+                        vConfigSetNVS(PeerTable,"PeerTable");
+                        ESP_LOGI(TAG, "MAC added is:  "MACSTR"", MAC2STR(recv_cb->mac_addr));
                     }
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
@@ -630,8 +633,10 @@ static void rpeer_espnow_task(void *pvParameter)
 					switch(mode){
 					case SERIAL:
 						uart_write_bytes(UART_NUM_1,(const char*) U_data.data ,U_data.len);
+						break;
 					case NODECONFIG:
 						vConfigSetNode(U_data);
+						break;
 					case JUMP:
 						xQueueSend(espnow_queue, &U_data, portMAX_DELAY);
 					}
@@ -713,7 +718,7 @@ static esp_err_t espnow_init(void)
     memcpy(send_param->dest_mac, broadcast_mac, ESP_NOW_ETH_ALEN);
     espnow_data_prepare(send_param);
 
-    xTaskCreate(rpeer_espnow_task, "register_peer", 2048*2, send_param, 4, NULL);
+    xTaskCreate(rpeer_espnow_task, "register_peer", 2048*4, send_param, 4, NULL);
     return ESP_OK;
 }
 
@@ -959,7 +964,7 @@ void app_main()
         ESP_ERROR_CHECK( nvs_flash_erase() );
         ret = nvs_flash_init();
     }
-   // nvs_flash_erase();
+    //nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
@@ -971,7 +976,7 @@ void app_main()
     //Create ESPnow Tasks
 
     wifi_init();
-    espnow_init();
+   espnow_init();
 
 
 }
