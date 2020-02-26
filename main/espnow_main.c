@@ -499,14 +499,24 @@ void vConfigSetNode(esp_uart_data_t data){
 		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
 	}
 
+	default :
+		data.data[1]+= 0x80;
+		data.data[2] = 0x01;
+		CRC.Val = CRC16(data.data,3);
+		data.data[3] = CRC.byte.LB;
+		data.data[4] = CRC.byte.HB;
+		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
+
 }
-	else ESP_LOGE(TAG_MB," CRC ERROR is %4x", CRC16(data.data,data.len));
-	data.data[1]+=0x80;
-	data.data[2] = 0x08;
-	CRC.Val = CRC16(data.data,3);
-	data.data[3] = CRC.byte.LB;
-	data.data[4] = CRC.byte.HB;
-	uart_write_bytes(UART_NUM_1,(const char*)data.data,5);//xxx Create and exceptions
+	else {
+		ESP_LOGE(TAG_MB," CRC ERROR is %4x", CRC16(data.data,data.len));
+		data.data[1]+=0x80;
+		data.data[2] = 0x08;
+		CRC.Val = CRC16(data.data,3);
+		data.data[3] = CRC.byte.LB;
+		data.data[4] = CRC.byte.HB;
+		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
+	}
 
 }
 static void rpeer_espnow_task(void *pvParameter)
