@@ -122,6 +122,7 @@ typedef struct {
 typedef struct {
 	uint8_t len;                              /* length of the data*/
 	uint8_t *data;								/* pointing to the data*/
+	uint8_t dir;								/* direction od the data*/
 } __attribute__((packed)) esp_uart_data_t;
 
 
