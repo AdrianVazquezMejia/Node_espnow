@@ -342,6 +342,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     assert(send_param->len >= sizeof(espnow_data_t));
     uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
     vConfigGetNVS(HoldingRegister,"HoldingRegister");
+    ESP_LOGI(TAG, "Node Id in data prepare is : %d", buf-> Nodeid);
     buf->Nodeid = HoldingRegister[NodeID];
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
 
@@ -391,20 +392,20 @@ void espnow_send(void *pvParameter){
     	vConfigGetNVS(HoldingRegister,"HoldingRegister");
     	vConfigGetNVS(PeerTable,"PeerTable");
     	des_node = RoutingTable[U_data.data[0]];
-    	buf->dir = FORDWARD;
+    	send_param->dir  = FORDWARD;
     	if ((des_node == HoldingRegister[NodeID])||(U_data.dir == BACKWARD)){
     		memcpy(send_param->dest_mac,back_mac,ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
     		printf("ITS AND ANSWER FROM A SLAVE TO MASTER, RT: %d , slave: %d\n", RoutingTable[U_data.data[0]],U_data.data[0]);
-    		buf->dir = BACKWARD;
+    		send_param->dir = BACKWARD;
     	}
     	else {
     		memcpy(send_param->dest_mac, PeerTable ,ESP_NOW_ETH_ALEN); //xxx
     		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR((send_param->dest_mac)));
     	}
-
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
+    	ESP_LOGI(TAG,"Esp now send: Direccion es : %d", buf->dir);
     	espnow_data_prepare(send_param);
     	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(send_param->dest_mac));
     	if (esp_now_send(send_param->dest_mac, send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
@@ -578,7 +579,7 @@ static void rpeer_espnow_task(void *pvParameter)
                 ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
                 espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
 
-                free(recv_cb->data);
+
                 if (ret == ESPNOW_DATA_BROADCAST) {
                     ESP_LOGI(TAG, "Receive %dth broadcast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 
@@ -618,12 +619,12 @@ static void rpeer_espnow_task(void *pvParameter)
                         vConfigGetNVS(PeerTable,"PeerTable");
                         memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
                         vConfigSetNVS(PeerTable,"PeerTable");
-                        ESP_LOGI(TAG, "MAC added is:  "MACSTR"", MAC2STR(recv_cb->mac_addr));
+                        ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d", MAC2STR(recv_cb->mac_addr ),buf->Nodeid);
                     }
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
-
-                    if ((buf->dir == FORDWARD)){
+                	printf("%d\n",buf->dir);
+                    if (buf->dir == FORDWARD){
                     memcpy(back_mac, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);//xxx
                     ESP_LOGI(TAG, "Back Mac is : "MACSTR"", MAC2STR(recv_cb->mac_addr));
                     }
@@ -636,23 +637,25 @@ static void rpeer_espnow_task(void *pvParameter)
 						case FORDWARD:
 							switch(mode){
 							case SERIAL:
+								ESP_LOGI(TAG,"SERIAL");
 								uart_write_bytes(UART_NUM_1,(const char*) U_data.data ,U_data.len);
 								break;
 							case NODECONFIG:
+								ESP_LOGI(TAG,"NODECONFIG");
 								vConfigSetNode(U_data);
 								break;
 							case JUMP:
 								U_data.dir = buf ->dir;
-								ESP_LOGI(TAG,"Salto pero %d: ", buf ->dir );
-								xQueueSend(espnow_queue, &U_data, portMAX_DELAY);
+								ESP_LOGI(TAG,"JUMP DIR %d: ", buf ->dir );
+								xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
 							}
-
+							break;
 							case BACKWARD:
 								if(memcmp(back_mac, broadcast_mac, ESP_NOW_ETH_ALEN)==0)
 									uart_write_bytes(UART_NUM_1,(const char*) U_data.data ,U_data.len);
 								else {
 									U_data.dir = buf ->dir;
-									ESP_LOGI(TAG,"Salto pero %d: ", buf ->dir );
+									ESP_LOGI(TAG,"JUMP %d: ", buf ->dir );
 									xQueueSend(espnow_queue, &U_data, portMAX_DELAY);
 								};
 					}
@@ -661,7 +664,9 @@ static void rpeer_espnow_task(void *pvParameter)
                 else{
                     ESP_LOGI(TAG, "Receive error data from: "MACSTR"  con ret : %d " , MAC2STR(recv_cb->mac_addr),ret);
                 }
+                free(recv_cb->data);
                 break;
+
             }
             default:
                 ESP_LOGE(TAG, "Callback type error: %d", evt.id);
@@ -901,6 +906,7 @@ void vConfigLoad(){
 
 	        uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
 	        size_t size_Peer = sizeof(PeerTable);
+	        ESP_LOGI(TAG, "Peer table is %d", size_Peer);
 	        memset(PeerTable,255, size_Peer);
 	        HoldingRegister[NodeID]= DEFAULT_ID;
 	        HoldingRegister[BaudaRate]= DEFAULT_BR;
@@ -991,9 +997,8 @@ void app_main()
     //uint8_t ex[8] = {0xff, 0x06, 0x01, 0x00, 0x00, 0xc8, 0x9c, 0x7e};
    // printf("CRC  is : %4x \n", CRC16(ex,8));
     //Create ESPnow Tasks
-
     wifi_init();
-   espnow_init();
+    espnow_init();
 
 
 }
