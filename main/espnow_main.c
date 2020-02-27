@@ -407,7 +407,6 @@ void espnow_send(void *pvParameter){
     	buf->data_len = U_data.len;
     	ESP_LOGI(TAG,"Esp now send: Direccion es : %d", buf->dir);
     	espnow_data_prepare(send_param);
-    	ESP_LOGI(TAG, "Send unicast data to: "MACSTR"", MAC2STR(send_param->dest_mac));
     	if (esp_now_send(send_param->dest_mac, send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
@@ -598,8 +597,8 @@ static void rpeer_espnow_task(void *pvParameter)
                         memcpy(peer->lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
                         memcpy(peer->peer_addr, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
                         ESP_ERROR_CHECK( esp_now_add_peer(peer) );
-
                         Peer_Quantity++;
+
                         memcpy(Peer[ Peer_Quantity ], recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
                         ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(Peer[1]));
                         free(peer);
@@ -888,7 +887,7 @@ static void rx_task(void *arg){
 }
 void vConfigLoad(){
     esp_err_t err = nvs_flash_init();
-    printf("IM HERE/n");
+
 
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
 	    if (err != ESP_OK) {
@@ -906,8 +905,7 @@ void vConfigLoad(){
 
 	        uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
 	        size_t size_Peer = sizeof(PeerTable);
-	        ESP_LOGI(TAG, "Peer table is %d", size_Peer);
-	        memset(PeerTable,255, size_Peer);
+ 	        memset(PeerTable,255, size_Peer);
 	        HoldingRegister[NodeID]= DEFAULT_ID;
 	        HoldingRegister[BaudaRate]= DEFAULT_BR;
 
@@ -994,8 +992,6 @@ void app_main()
     vConfigLoad();
    // Create UART tasks
     xTaskCreate(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL);
-    //uint8_t ex[8] = {0xff, 0x06, 0x01, 0x00, 0x00, 0xc8, 0x9c, 0x7e};
-   // printf("CRC  is : %4x \n", CRC16(ex,8));
     //Create ESPnow Tasks
     wifi_init();
     espnow_init();
