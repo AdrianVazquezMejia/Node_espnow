@@ -83,7 +83,7 @@ static const int TX_BUF_SIZE = 1024;
 #define BaudaRate 1
 #define DEFAULT_BR 8 //115200
 #define ROUTING_TABLE_SIZE 255
-#define PEER_TABLE_SIZE 255
+#define PEER_TABLE_SIZE 256
 #define HOLDING_REGISTER_SIZE 513
 
 
@@ -230,7 +230,7 @@ void vConfigSetNVS(uint8_t *Array , const char *Name){
     }
     if(strcmp(Name, "PeerTable") == 0){
     	sw = 3;
-    	size_data = (size_t)(PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
+    	size_data = PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN;
         }
     switch(sw){
 
@@ -336,14 +336,15 @@ int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t
 }
 
 /* Prepare ESPNOW data to be sent. */
+
 void espnow_data_prepare(espnow_send_param_t *send_param)
 {
     espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
     assert(send_param->len >= sizeof(espnow_data_t));
     uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
     vConfigGetNVS(HoldingRegister,"HoldingRegister");
-    ESP_LOGI(TAG, "Node Id in data prepare is : %d", buf-> Nodeid);
     buf->Nodeid = HoldingRegister[NodeID];
+    ESP_LOGI(TAG, "Node Id in data prepare is : %d", buf-> Nodeid);
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
 
     buf->state = send_param->state;
@@ -373,6 +374,21 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 		//routin to obtain unknown macs
 	}
 }*/
+void     vEspnowRRPeers(void){
+	ESP_LOGI(TAG, "Registering");
+	uint8_t PeerTable[(PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN)] = {0};
+	uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
+	vConfigGetNVS(PeerTable,"PeerTable");
+	uint16_t j = 0;
+	while (j <=257){
+
+		memcpy(mac,PeerTable + (j* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
+		//if(memcmp(PeerTable + i* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN) !=0)
+        ESP_LOGI(TAG, "MAC is:  "MACSTR" from Node %d  y position %d", MAC2STR(mac), j ,  j* ESP_NOW_ETH_ALEN);
+        j++;
+	}
+
+}
 void espnow_send(void *pvParameter){
 	espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
 	esp_uart_data_t U_data;
@@ -382,15 +398,16 @@ void espnow_send(void *pvParameter){
     send_param->state = 0;
 	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-	uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] = {0};
+	uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
 	uint8_t des_node = 0;
+	uint16_t posicion = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	ESP_LOGI(TAG,"Send Task activated");
 
 
     	vConfigGetNVS(RoutingTable,"RoutingTable");
     	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-    	vConfigGetNVS(PeerTable,"PeerTable");
+
     	des_node = RoutingTable[U_data.data[0]];
     	send_param->dir  = FORDWARD;
     	if ((des_node == HoldingRegister[NodeID])||(U_data.dir == BACKWARD)){
@@ -399,8 +416,11 @@ void espnow_send(void *pvParameter){
     		send_param->dir = BACKWARD;
     	}
     	else {
-    		memcpy(send_param->dest_mac, PeerTable ,ESP_NOW_ETH_ALEN); //xxx
-    		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR((send_param->dest_mac)));
+    	   	vConfigGetNVS(PeerTable,"PeerTable");
+    	   	posicion = ESP_NOW_ETH_ALEN * des_node;
+    		memcpy(send_param->dest_mac, PeerTable +posicion,ESP_NOW_ETH_ALEN); //xxx
+    		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR" pos %d", des_node, MAC2STR(send_param->dest_mac), posicion);
+    		//vEspnowRRPeers();
     	}
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
@@ -534,7 +554,7 @@ static void rpeer_espnow_task(void *pvParameter)
     esp_uart_data_t U_data;
     vTaskDelay(5000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "Start sending broadcast data");
-
+    uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
     /* Start sending broadcast ESPNOW data. */
 
     espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
@@ -590,6 +610,7 @@ static void rpeer_espnow_task(void *pvParameter)
                             espnow_deinit(send_param);
                             vTaskDelete(NULL);
                         }
+                        vConfigGetNVS(PeerTable,"PeerTable");
                         memset(peer, 0, sizeof(esp_now_peer_info_t));
                         peer->channel = CONFIG_ESPNOW_CHANNEL;
                         peer->ifidx = ESPNOW_WIFI_IF;
@@ -615,10 +636,10 @@ static void rpeer_espnow_task(void *pvParameter)
                         send_param->unicast = true;
                         send_param->broadcast = false;
                        }
-                        vConfigGetNVS(PeerTable,"PeerTable");
                         memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
                         vConfigSetNVS(PeerTable,"PeerTable");
-                        ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d", MAC2STR(recv_cb->mac_addr ),buf->Nodeid);
+                		memcpy(mac,PeerTable + (buf->Nodeid)*(ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
+                        ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d is the position %d", MAC2STR(mac),buf->Nodeid, (buf->Nodeid)*(ESP_NOW_ETH_ALEN));
                     }
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
@@ -738,7 +759,7 @@ static esp_err_t espnow_init(void)
     }
     memcpy(send_param->dest_mac, broadcast_mac, ESP_NOW_ETH_ALEN);
     espnow_data_prepare(send_param);
-
+    vEspnowRRPeers();
     xTaskCreate(rpeer_espnow_task, "register_peer", 2048*4, send_param, 4, NULL);
     return ESP_OK;
 }
@@ -905,7 +926,7 @@ void vConfigLoad(){
 
 	        uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
 	        size_t size_Peer = sizeof(PeerTable);
- 	        memset(PeerTable,255, size_Peer);
+ 	        //memset(PeerTable,255, size_Peer);
 	        HoldingRegister[NodeID]= DEFAULT_ID;
 	        HoldingRegister[BaudaRate]= DEFAULT_BR;
 
@@ -995,6 +1016,4 @@ void app_main()
     //Create ESPnow Tasks
     wifi_init();
     espnow_init();
-
-
 }
