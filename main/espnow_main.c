@@ -81,7 +81,7 @@ static const int TX_BUF_SIZE = 1024;
 #define NodeID 0
 #define DEFAULT_ID 255
 #define BaudaRate 1
-#define DEFAULT_BR 8 //115200
+#define DEFAULT_BR 10 //115200
 #define ROUTING_TABLE_SIZE 255
 #define PEER_TABLE_SIZE 256
 #define HOLDING_REGISTER_SIZE 513
@@ -457,6 +457,79 @@ uint16_t uComGetTransData(int slave){
 	}
 	return -1;
 }
+
+void UARTinit(int BTid) {
+	uart_driver_delete(UART_NUM_1);
+	int uart_baudarate = 115200;
+	switch(BTid) {
+		case 0:
+			uart_baudarate = 300;
+		break;
+		case 1:
+			uart_baudarate = 600;
+			break;
+		case 2:
+			uart_baudarate = 1200;
+			break;
+		case 3:
+			uart_baudarate = 2400;
+			break;
+		case 4:
+			uart_baudarate = 4800;
+			break;
+		case 5:
+			uart_baudarate = 9600;
+			break;
+		case 6:
+			uart_baudarate = 14400;
+			break;
+		case 7:
+			uart_baudarate = 19200;
+			break;
+		case 8:
+			uart_baudarate = 38400;
+			break;
+		case 9:
+			uart_baudarate = 56000;
+			break;
+		case 10:
+			uart_baudarate = 115200;
+			break;
+		case 11:
+			uart_baudarate = 128000;
+			break;
+		case 12:
+			uart_baudarate = 256000;
+			break;
+	}
+	ESP_LOGI(TAG, "El baudarate is %d",uart_baudarate );
+    const uart_config_t uart_config = {
+        .baud_rate = uart_baudarate,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+    uart_param_config(UART_NUM_1, &uart_config);
+    uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, RTS_PIN, CTS_PIN);
+    uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2,  TX_BUF_SIZE * 2,  20, &uart1_queue, 0);
+    uart_set_mode(UART_NUM_1, UART_MODE_RS485_HALF_DUPLEX);
+    }
+
+uint8_t uComDirection(uint8_t *Slave){
+uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
+vConfigGetNVS(HoldingRegister , "HoldingRegister");
+printf("%d",*Slave);
+	if (HoldingRegister[NodeID] == *Slave){
+		printf("ITS FOR ME!\n");
+		return NODE;
+		}
+		else{
+			printf("ITS FOR OTHER :-(!\n");
+			return EX_SLAVE;
+		}
+	return -1;
+}
 void vConfigSetNode(esp_uart_data_t data){
 	uint8_t function = data.data[1];
 	INT_VAL Address;
@@ -488,6 +561,10 @@ void vConfigSetNode(esp_uart_data_t data){
 		}
 		printf( "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+		if(Address.Val == BaudaRate){
+			vTaskDelay(500);
+			UARTinit(HoldingRegister[BaudaRate]);
+		}
 		break;
 
 	case WRITE_COIL:
@@ -507,9 +584,7 @@ void vConfigSetNode(esp_uart_data_t data){
 			data.data[inc] =HoldingRegister[Address.Val+i];
 			//printf("inc is %d\n", inc);
 			inc++;
-
 			i++;
-			//printf("inc is %d\n", inc);
 		}
 		CRC.Val = CRC16(data.data,inc);
 		data.data[inc] = CRC.byte.LB;
@@ -772,63 +847,7 @@ static void espnow_deinit(espnow_send_param_t *send_param)
     esp_now_deinit();
 }
 
-void UARTinit(int BTid) {
-	uart_driver_delete(UART_NUM_1);
-	int uart_baudarate = 8;
-	switch(BTid) {
-		case 1:
-			uart_baudarate = 9600;
-			break;
-		case 2:
-			uart_baudarate = 14400;
-			break;
-		case 3:
-			uart_baudarate = 19200;
-			break;
-		case 4:
-			uart_baudarate = 28800;
-			break;
-		case 5:
-			uart_baudarate = 38400;
-			break;
-		case 6:
-			uart_baudarate = 57600;
-			break;
-		case 7:
-			uart_baudarate = 76800;
-			break;
-		case 8:
-			uart_baudarate = 115200;
-			break;
-	}
-	ESP_LOGI(TAG, "El baudarate is %d",uart_baudarate );
-    const uart_config_t uart_config = {
-        .baud_rate = uart_baudarate,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-    };
-    uart_param_config(UART_NUM_1, &uart_config);
-    uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, RTS_PIN, CTS_PIN);
-    uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2,  TX_BUF_SIZE * 2,  20, &uart1_queue, 0);
-    uart_set_mode(UART_NUM_1, UART_MODE_RS485_HALF_DUPLEX);
-    }
 
-uint8_t uComDirection(uint8_t *Slave){
-uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-vConfigGetNVS(HoldingRegister , "HoldingRegister");
-printf("%d",*Slave);
-	if (HoldingRegister[NodeID] == *Slave){
-		printf("ITS FOR ME!\n");
-		return NODE;
-		}
-		else{
-			printf("ITS FOR OTHER :-(!\n");
-			return EX_SLAVE;
-		}
-	return -1;
-}
 
 static void rx_task(void *arg){
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
