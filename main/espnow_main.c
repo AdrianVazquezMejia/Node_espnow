@@ -353,27 +353,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     buf->dir = send_param->dir;
     buf->crc = crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
-/* Task for send espnow data coming from UART*/
-/*void vComGetMac(uint8_t **mac,uint8_t slave ){
-	*mac = malloc(ESP_NOW_ETH_ALEN);
-	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
-	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-	uint8_t RoutingTable[PEER_TABLE_SIZE][ESP_NOW_ETH_ALEN] = {0};
-	uint8_t des_node = 0;
-	vConfigGetNVS(RoutingTable,"RoutingTable");
-	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-	vConfigGetNVS(PeerTable[0],"PeerTable");
-	des_node = RoutingTable[slave];
-	if (des_node == HoldingRegister[NodeID]){
-		memcpy((*mac),back_mac,ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
-		printf("ITS AND ANSWER FROM A SLAVE TO MASTER\n");
-	}
-	else {
-		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR((*mac)));
-		memcpy((*mac), PeerTable[des_node],ESP_NOW_ETH_ALEN); //xxx
-		//routin to obtain unknown macs
-	}
-}*/
+
 void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 	esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
 	if (peer == NULL) {
@@ -402,7 +382,6 @@ void     vEspnowGetOldPeers(void){
 		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + j* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0)
 			RegisterPeer(mac);
 	}
-
 }
 void espnow_send(void *pvParameter){
 	espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
@@ -1032,6 +1011,10 @@ void vConfigLoad(){
 }
 
 
+
+
+
+
 void app_main()
 {
     // Initialize NVS
@@ -1050,4 +1033,5 @@ void app_main()
     //Create ESPnow Tasks
     wifi_init();
     espnow_init();
+    //xTaskCreate(FormatFactory, "FormatFactory", 2048*2, NULL, configMAX_PRIORITIES, NULL);
 }
