@@ -82,7 +82,7 @@ static const int TX_BUF_SIZE = 1024;
 #define DEFAULT_ID 255
 #define BaudaRate 1
 #define DEFAULT_BR 10 //115200
-#define ROUTING_TABLE_SIZE 255
+#define ROUTING_TABLE_SIZE 256
 #define PEER_TABLE_SIZE 256
 #define HOLDING_REGISTER_SIZE 513
 
@@ -374,18 +374,33 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 		//routin to obtain unknown macs
 	}
 }*/
-void     vEspnowRRPeers(void){
+void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
+	esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
+	if (peer == NULL) {
+		ESP_LOGE(TAG, "Malloc peer information fail");
+		return;
+	}
+	memset(peer, 0, sizeof(esp_now_peer_info_t));
+	peer->channel = CONFIG_ESPNOW_CHANNEL;
+	peer->ifidx = ESPNOW_WIFI_IF;
+	peer->encrypt = true;
+	memcpy(peer->lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
+	memcpy(peer->peer_addr, mac, ESP_NOW_ETH_ALEN);
+	ESP_ERROR_CHECK( esp_now_add_peer(peer) );
+	ESP_LOGI(TAG, "MAC succefully "MACSTR" added ", MAC2STR(mac));
+	free(peer);
+}
+void     vEspnowGetOldPeers(void){
 	ESP_LOGI(TAG, "Registering");
 	uint8_t PeerTable[(PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN)] = {0};
+	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
 	uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
 	vConfigGetNVS(PeerTable,"PeerTable");
-	uint16_t j = 0;
-	while (j <=257){
-
+	vConfigGetNVS(RoutingTable,"RoutingTable");
+	for (uint16_t j = 0 ; j <=255 ; j++){
 		memcpy(mac,PeerTable + (j* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
-		//if(memcmp(PeerTable + i* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN) !=0)
-        ESP_LOGI(TAG, "MAC is:  "MACSTR" from Node %d  y position %d", MAC2STR(mac), j ,  j* ESP_NOW_ETH_ALEN);
-        j++;
+		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + j* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0)
+			RegisterPeer(mac);
 	}
 
 }
@@ -834,7 +849,7 @@ static esp_err_t espnow_init(void)
     }
     memcpy(send_param->dest_mac, broadcast_mac, ESP_NOW_ETH_ALEN);
     espnow_data_prepare(send_param);
-    vEspnowRRPeers();
+    vEspnowGetOldPeers();
     xTaskCreate(rpeer_espnow_task, "register_peer", 2048*4, send_param, 4, NULL);
     return ESP_OK;
 }
@@ -1027,7 +1042,7 @@ void app_main()
     }
     //nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
-    esp_log_level_set(TAG, ESP_LOG_INFO);
+    //esp_log_level_set(TAG, ESP_LOG_INFO);
 
     vConfigLoad();
    // Create UART tasks
