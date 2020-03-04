@@ -61,6 +61,7 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "string.h"
 #include "espnow.h"
 #include "CRC.h"
+//#include "format_factory.h"
 
 
 
@@ -87,6 +88,9 @@ static const int TX_BUF_SIZE = 1024;
 #define HOLDING_REGISTER_SIZE 513
 
 
+#define GPIO_INPUT_IO_0     0 //xxx
+#define ESP_INTR_FLAG_DEFAULT 0
+
 static const char *TAG = "espnow";
 static const char *TAG_MB = "espnow";
 
@@ -99,6 +103,10 @@ static QueueHandle_t uart1_queue;
 static xQueueHandle espnow_Squeue;
 
 static xQueueHandle espnow_Rqueue;
+
+//static xQueueHandle gpio_evt_queue = NULL;
+
+static SemaphoreHandle_t xSemaphore = NULL;
 
  nvs_handle nvshandle;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
@@ -412,9 +420,8 @@ void espnow_send(void *pvParameter){
     	else {
     	   	vConfigGetNVS(PeerTable,"PeerTable");
     	   	posicion = ESP_NOW_ETH_ALEN * des_node;
-    		memcpy(send_param->dest_mac, PeerTable +posicion,ESP_NOW_ETH_ALEN); //xxx
+    		memcpy(send_param->dest_mac, PeerTable + posicion,ESP_NOW_ETH_ALEN); //xxx
     		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR" pos %d", des_node, MAC2STR(send_param->dest_mac), posicion);
-    		//vEspnowRRPeers();
     	}
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
@@ -1009,10 +1016,86 @@ void vConfigLoad(){
 
 
 }
+void vConfigFormatFactory( void ){
+	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0};
+	uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
+	uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
+
+	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
+	bzero(RoutingTable,ROUTING_TABLE_SIZE);
+	HoldingRegister[NodeID] = DEFAULT_ID;
+	HoldingRegister[BaudaRate] = DEFAULT_BR;
+
+	vConfigSetNVS(HoldingRegister,"HoldingRegister");
+	vConfigSetNVS(RoutingTable,"RoutingTable");
+	vConfigSetNVS(PeerTable,"PeerTable");
+
+	ESP_LOGI(TAG,"NodeID is: %d con BaudaRate %d",HoldingRegister[NodeID],HoldingRegister[BaudaRate]);
+
+}
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+	static BaseType_t xHigherPriorityTaskWoken;
+	xHigherPriorityTaskWoken = pdFALSE;
+   // uint32_t gpio_num = (uint32_t) arg;
+    //xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+    xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken);
+}
 
 
+void FormatFactory(void *arg){
 
+    gpio_config_t io_conf;
 
+    //interrupt of rising edge
+    io_conf.intr_type = GPIO_PIN_INTR_NEGEDGE;
+    //bit mask of the pins, use GPIO4/5 here
+    io_conf.pin_bit_mask = 1ULL<<GPIO_INPUT_IO_0;
+    //set as input mode
+    io_conf.mode = GPIO_MODE_INPUT;
+    //enable pull-up mode
+    io_conf.pull_up_en = 1;
+    io_conf.pull_down_en = 0;
+    gpio_config(&io_conf);
+
+    //change gpio intrrupt type for one pin
+    gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_NEGEDGE);
+
+    //create a queue to handle gpio event from isr
+    //gpio_evt_queue = xQueueCreate(1, sizeof(uint32_t));
+    xSemaphore = xSemaphoreCreateBinary();
+    //install gpio isr service
+     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+     //hook isr handler for specific gpio pin
+     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
+     //remove isr handler for gpio number.
+     gpio_isr_handler_remove(GPIO_INPUT_IO_0);
+     //hook isr handler for specific gpio pin again
+     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
+	int t = 0;
+	//uint32_t io_num;
+	ESP_LOGI(TAG, "FORMAT FACTORY TASK");
+
+	while(xSemaphoreTake( xSemaphore, portMAX_DELAY) == pdTRUE){//xxx
+		while(gpio_get_level(GPIO_INPUT_IO_0)==0){
+			vTaskDelay(10/portTICK_RATE_MS);
+			t++;
+			if (t == 500){
+				printf("Format factory\n");
+				vConfigFormatFactory();
+				vTaskDelay(1000/portTICK_RATE_MS);
+			    printf("Restarting no\n");
+			    fflush(stdout);
+			    esp_restart();
+				break;
+			}
+		}
+		t = 0;
+        printf("GPIO[%d] intr, val: %d\n", GPIO_INPUT_IO_0, gpio_get_level(GPIO_INPUT_IO_0));
+        vTaskDelay(1000/portTICK_RATE_MS);
+	}
+
+}
 
 
 void app_main()
@@ -1033,5 +1116,5 @@ void app_main()
     //Create ESPnow Tasks
     wifi_init();
     espnow_init();
-    //xTaskCreate(FormatFactory, "FormatFactory", 2048*2, NULL, configMAX_PRIORITIES, NULL);
+    xTaskCreate(FormatFactory, "FormatFactory", 2048*2, NULL, configMAX_PRIORITIES, NULL);
 }
