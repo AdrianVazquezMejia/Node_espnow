@@ -61,6 +61,7 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "string.h"
 #include "espnow.h"
 #include "CRC.h"
+#include "led.h"
 //#include "format_factory.h"
 
 
@@ -379,7 +380,7 @@ void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 	ESP_LOGI(TAG, "MAC succefully "MACSTR" added ", MAC2STR(mac));
 	free(peer);
 }
-void     vEspnowGetOldPeers(void){
+void vEspnowGetOldPeers(void){
 	ESP_LOGI(TAG, "Registering");
 	uint8_t PeerTable[(PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN)] = {0};
 	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
@@ -538,7 +539,7 @@ void vNotiUart(void){
 	gpio_set_level(GPIO_OUTPUT_IO_19,0);
 
 }
-void vConfigSetNode(esp_uart_data_t data){
+void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 	uint8_t function = data.data[1];
 	INT_VAL Address;
 	Address.byte.HB = data.data[2];
@@ -568,6 +569,11 @@ void vConfigSetNode(esp_uart_data_t data){
 			vConfigSetNVS(RoutingTable,"RoutingTable");
 		}
 		printf( "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
+		if (dir == ESP_NOW){
+			data.dir = BACKWARD;
+			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+		}
+		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 		vNotiUart();
 		if(Address.Val == BaudaRate){
@@ -579,6 +585,11 @@ void vConfigSetNode(esp_uart_data_t data){
 	case WRITE_COIL:
 		if ((Address.Val == 0)&&(Value.Val ==0xFF00)){
 		    printf("Restarting \n");
+		    if (dir == ESP_NOW){
+				data.dir = BACKWARD;
+				xQueueSend(espnow_queue, &data, portMAX_DELAY);
+			}
+			else
 		    uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 			vNotiUart();
 			vTaskDelay(10);
@@ -609,6 +620,11 @@ void vConfigSetNode(esp_uart_data_t data){
 		data.data[inc] = CRC.byte.HB;
 		data.len= ++inc;
 		printf("AQUI %d bytes limit \n",inc);
+		if (dir == ESP_NOW){
+			data.dir = BACKWARD;
+			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+		}
+		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
 		vNotiUart();
 		break;
@@ -618,6 +634,11 @@ void vConfigSetNode(esp_uart_data_t data){
 		CRC.Val = CRC16(data.data,3);
 		data.data[3] = CRC.byte.LB;
 		data.data[4] = CRC.byte.HB;
+		if (dir == ESP_NOW){
+			data.dir = BACKWARD;
+			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+		}
+		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
 		vNotiUart();
 	}
@@ -632,6 +653,11 @@ void vConfigSetNode(esp_uart_data_t data){
 		CRC.Val = CRC16(data.data,3);
 		data.data[3] = CRC.byte.LB;
 		data.data[4] = CRC.byte.HB;
+		if (dir == ESP_NOW){
+			data.dir = BACKWARD;
+			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+		}
+		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
 		vNotiUart();
 	}
@@ -758,7 +784,7 @@ static void rpeer_espnow_task(void *pvParameter)
 								break;
 							case NODECONFIG:
 								ESP_LOGI(TAG,"NODECONFIG");
-								vConfigSetNode(U_data);
+								vConfigSetNode(U_data,ESP_NOW);
 								break;
 							case JUMP:
 								U_data.dir = buf ->dir;
@@ -903,7 +929,7 @@ static void rx_task(void *arg){
                     case NODE:
                     	// TO ME
                     	ESP_LOGI(RX_TASK_TAG,"Node");
-                    	vConfigSetNode(U_data);
+                    	vConfigSetNode(U_data,UART);
                     	break;
                     }
                     vNotiUart();
@@ -1118,6 +1144,7 @@ void FormatFactory(void *arg){
 	}
 
 }
+/*
 void vNotiLEDinit(void){
 
     gpio_config_t io_conf;
@@ -1137,6 +1164,7 @@ void vNotiLEDinit(void){
     vTaskDelay(50);
     }
 }
+*/
 
 void app_main()
 {

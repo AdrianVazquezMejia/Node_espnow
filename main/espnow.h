@@ -80,6 +80,10 @@ enum{
 	NODECONFIG,
 	JUMP
 };
+enum{
+	ESP_NOW,
+	UART
+};
 
 typedef union
 {
