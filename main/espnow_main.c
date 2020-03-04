@@ -89,6 +89,7 @@ static const int TX_BUF_SIZE = 1024;
 
 
 #define GPIO_INPUT_IO_0     0 //xxx
+#define GPIO_OUTPUT_IO_19	19//19
 #define ESP_INTR_FLAG_DEFAULT 0
 
 static const char *TAG = "espnow";
@@ -562,6 +563,7 @@ void vConfigSetNode(esp_uart_data_t data){
 		}
 		printf( "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+		vNotiUart();
 		if(Address.Val == BaudaRate){
 			vTaskDelay(500);
 			UARTinit(HoldingRegister[BaudaRate]);
@@ -594,6 +596,7 @@ void vConfigSetNode(esp_uart_data_t data){
 		data.len= ++inc;
 		printf("AQUI %d bytes limit \n",inc);
 		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
+		vNotiUart();
 		break;
 	default :
 		data.data[1]+= 0x80;
@@ -602,6 +605,7 @@ void vConfigSetNode(esp_uart_data_t data){
 		data.data[3] = CRC.byte.LB;
 		data.data[4] = CRC.byte.HB;
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
+		vNotiUart();
 	}
 
 
@@ -615,6 +619,7 @@ void vConfigSetNode(esp_uart_data_t data){
 		data.data[3] = CRC.byte.LB;
 		data.data[4] = CRC.byte.HB;
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
+		vNotiUart();
 	}
 
 }
@@ -735,6 +740,7 @@ static void rpeer_espnow_task(void *pvParameter)
 							case SERIAL:
 								ESP_LOGI(TAG,"SERIAL");
 								uart_write_bytes(UART_NUM_1,(const char*) U_data.data ,U_data.len);
+								vNotiUart();
 								break;
 							case NODECONFIG:
 								ESP_LOGI(TAG,"NODECONFIG");
@@ -747,8 +753,10 @@ static void rpeer_espnow_task(void *pvParameter)
 							}
 							break;
 							case BACKWARD:
-								if(memcmp(back_mac, broadcast_mac, ESP_NOW_ETH_ALEN)==0)
+								if(memcmp(back_mac, broadcast_mac, ESP_NOW_ETH_ALEN)==0){
 									uart_write_bytes(UART_NUM_1,(const char*) U_data.data ,U_data.len);
+									vNotiUart();
+								}
 								else {
 									U_data.dir = buf ->dir;
 									ESP_LOGI(TAG,"JUMP %d: ", buf ->dir );
@@ -849,7 +857,12 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 }
 
 
+void vNotiUart(void){
+	gpio_set_level(GPIO_OUTPUT_IO_19,1);
+	vTaskDelay(5);
+	gpio_set_level(GPIO_OUTPUT_IO_19,0);
 
+}
 static void rx_task(void *arg){
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
 	vConfigGetNVS(HoldingRegister,"HoldingRegister");
@@ -884,7 +897,7 @@ static void rx_task(void *arg){
                     	vConfigSetNode(U_data);
                     	break;
                     }
-                    ESP_LOGI(RX_TASK_TAG,"Y enviada a la cola \n");
+                    vNotiUart();
                     break;
                 //Event of HW FIFO overflow detected
                 case UART_FIFO_OVF:
@@ -1096,7 +1109,25 @@ void FormatFactory(void *arg){
 	}
 
 }
+void vNotiLEDinit(void){
 
+    gpio_config_t io_conf;
+    //bit mask of the pins, use GPIO4/5 here
+    io_conf.pin_bit_mask = 1ULL<<GPIO_OUTPUT_IO_19;
+    //set as input mode
+    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    //enable pull-up mode
+    io_conf.pull_up_en = 0;
+    io_conf.pull_down_en = 0;
+    gpio_config(&io_conf);
+    for(uint8_t i = 0; i<3; i++){
+    gpio_set_level(GPIO_OUTPUT_IO_19,1);
+    vTaskDelay(50);
+    gpio_set_level(GPIO_OUTPUT_IO_19,0);
+    vTaskDelay(50);
+    }
+}
 
 void app_main()
 {
@@ -1111,10 +1142,13 @@ void app_main()
     //esp_log_level_set(TAG, ESP_LOG_INFO);
 
     vConfigLoad();
+
+
    // Create UART tasks
     xTaskCreate(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL);
     //Create ESPnow Tasks
     wifi_init();
     espnow_init();
     xTaskCreate(FormatFactory, "FormatFactory", 2048*2, NULL, configMAX_PRIORITIES, NULL);
+    vNotiLEDinit();
 }
