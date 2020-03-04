@@ -11,23 +11,12 @@
 #include <string.h>
 #include <assert.h>
 #include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/timers.h"
-#include "nvs_flash.h"
 #include "esp_event_loop.h"
-#include "tcpip_adapter.h"
-#include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_system.h"
-#include "esp_now.h"
 #include "rom/ets_sys.h"
 #include "rom/crc.h"
-#include "freertos/task.h"
-#include "driver/uart.h"
-#include "soc/uart_struct.h"
-#include "string.h"
-#include "espnow.h"
-#include "CRC.h"
+
 #define GPIO_OUTPUT_IO_19	19
 
 
