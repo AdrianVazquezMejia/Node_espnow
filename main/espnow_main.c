@@ -532,6 +532,12 @@ printf("%d",*Slave);
 		}
 	return -1;
 }
+void vNotiUart(void){
+	gpio_set_level(GPIO_OUTPUT_IO_19,1);
+	vTaskDelay(5);
+	gpio_set_level(GPIO_OUTPUT_IO_19,0);
+
+}
 void vConfigSetNode(esp_uart_data_t data){
 	uint8_t function = data.data[1];
 	INT_VAL Address;
@@ -571,7 +577,15 @@ void vConfigSetNode(esp_uart_data_t data){
 		break;
 
 	case WRITE_COIL:
-		printf("Make some coil function stuff\n");
+		if ((Address.Val == 0)&&(Value.Val ==0xFF00)){
+		    printf("Restarting \n");
+		    uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+			vNotiUart();
+			vTaskDelay(10);
+		    fflush(stdout);
+		    esp_restart();
+			break;
+		}
 		break;
 
 	case READ_HOLDING:
@@ -857,12 +871,7 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 }
 
 
-void vNotiUart(void){
-	gpio_set_level(GPIO_OUTPUT_IO_19,1);
-	vTaskDelay(5);
-	gpio_set_level(GPIO_OUTPUT_IO_19,0);
 
-}
 static void rx_task(void *arg){
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
 	vConfigGetNVS(HoldingRegister,"HoldingRegister");
@@ -1097,7 +1106,7 @@ void FormatFactory(void *arg){
 				printf("Format factory\n");
 				vConfigFormatFactory();
 				vTaskDelay(1000/portTICK_RATE_MS);
-			    printf("Restarting no\n");
+			    printf("Restarting \n");
 			    fflush(stdout);
 			    esp_restart();
 				break;
