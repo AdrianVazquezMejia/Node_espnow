@@ -533,12 +533,7 @@ printf("%d",*Slave);
 		}
 	return -1;
 }
-void vNotiUart(void){
-	gpio_set_level(GPIO_OUTPUT_IO_19,1);
-	vTaskDelay(5);
-	gpio_set_level(GPIO_OUTPUT_IO_19,0);
 
-}
 void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 	uint8_t function = data.data[1];
 	INT_VAL Address;
@@ -1144,27 +1139,6 @@ void FormatFactory(void *arg){
 	}
 
 }
-/*
-void vNotiLEDinit(void){
-
-    gpio_config_t io_conf;
-    //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = 1ULL<<GPIO_OUTPUT_IO_19;
-    //set as input mode
-    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    //enable pull-up mode
-    io_conf.pull_up_en = 0;
-    io_conf.pull_down_en = 0;
-    gpio_config(&io_conf);
-    for(uint8_t i = 0; i<3; i++){
-    gpio_set_level(GPIO_OUTPUT_IO_19,1);
-    vTaskDelay(50);
-    gpio_set_level(GPIO_OUTPUT_IO_19,0);
-    vTaskDelay(50);
-    }
-}
-*/
 
 void app_main()
 {
