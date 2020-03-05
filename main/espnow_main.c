@@ -84,13 +84,14 @@ static const int TX_BUF_SIZE = 1024;
 #define DEFAULT_ID 255
 #define BaudaRate 1
 #define DEFAULT_BR 10 //115200
-#define ROUTING_TABLE_SIZE 256
+#define ROUTING_TABLE_SIZE 512
 #define PEER_TABLE_SIZE 256
 #define HOLDING_REGISTER_SIZE 513
+#define OFFSET	256
 
 
 #define GPIO_INPUT_IO_0     0 //xxx
-#define GPIO_OUTPUT_IO_19	19//19
+#define GPIO_OUTPUT_IO_19	2//19
 #define ESP_INTR_FLAG_DEFAULT 0
 
 static const char *TAG = "espnow";
@@ -106,7 +107,6 @@ static xQueueHandle espnow_Squeue;
 
 static xQueueHandle espnow_Rqueue;
 
-//static xQueueHandle gpio_evt_queue = NULL;
 
 static SemaphoreHandle_t xSemaphore = NULL;
 
@@ -152,6 +152,7 @@ static void wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
 #endif
 }
+
 void vConfigGetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 
@@ -224,6 +225,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 		nvs_close(nvshandle);
     }
 }
+
 void vConfigSetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
@@ -380,6 +382,7 @@ void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 	ESP_LOGI(TAG, "MAC succefully "MACSTR" added ", MAC2STR(mac));
 	free(peer);
 }
+
 void vEspnowGetOldPeers(void){
 	ESP_LOGI(TAG, "Registering");
 	uint8_t PeerTable[(PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN)] = {0};
@@ -388,11 +391,13 @@ void vEspnowGetOldPeers(void){
 	vConfigGetNVS(PeerTable,"PeerTable");
 	vConfigGetNVS(RoutingTable,"RoutingTable");
 	for (uint16_t j = 0 ; j <=255 ; j++){
-		memcpy(mac,PeerTable + (j* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
-		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + j* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0)
+		memcpy(mac,PeerTable + (RoutingTable[j]* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);//xxx
+		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + RoutingTable[j]* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0){
 			RegisterPeer(mac);
+		}
 	}
 }
+
 void espnow_send(void *pvParameter){
 	espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
 	esp_uart_data_t U_data;
@@ -411,16 +416,16 @@ void espnow_send(void *pvParameter){
 
     	vConfigGetNVS(RoutingTable,"RoutingTable");
     	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-
+	   	vConfigGetNVS(PeerTable,"PeerTable");
     	des_node = RoutingTable[U_data.data[0]];
     	send_param->dir  = FORDWARD;
     	if ((des_node == HoldingRegister[NodeID])||(U_data.dir == BACKWARD)){
-    		memcpy(send_param->dest_mac,back_mac,ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
-    		printf("ITS AND ANSWER FROM A SLAVE TO MASTER, RT: %d , slave: %d\n", RoutingTable[U_data.data[0]],U_data.data[0]);
+        	des_node = RoutingTable[OFFSET+U_data.data[0]];
+    		memcpy(send_param->dest_mac,PeerTable+(ESP_NOW_ETH_ALEN * des_node),ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
+    		printf("ITS AND ANSWER FROM A SLAVE TO MASTER, To : %d , slave: %d\n", RoutingTable[OFFSET+U_data.data[0]],U_data.data[0]);
     		send_param->dir = BACKWARD;
     	}
     	else {
-    	   	vConfigGetNVS(PeerTable,"PeerTable");
     	   	posicion = ESP_NOW_ETH_ALEN * des_node;
     		memcpy(send_param->dest_mac, PeerTable + posicion,ESP_NOW_ETH_ALEN); //xxx
     		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR" pos %d", des_node, MAC2STR(send_param->dest_mac), posicion);
@@ -428,7 +433,6 @@ void espnow_send(void *pvParameter){
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
-    	ESP_LOGI(TAG,"Esp now send: Direccion es : %d", buf->dir);
     	espnow_data_prepare(send_param);
     	if (esp_now_send(send_param->dest_mac, send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
@@ -438,6 +442,7 @@ void espnow_send(void *pvParameter){
     }
     vTaskDelete(NULL);
 }
+
 uint16_t uComGetTransData(int slave){
 
     uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
@@ -656,7 +661,6 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
 		vNotiUart();
 	}
-
 }
 static void rpeer_espnow_task(void *pvParameter)
 {
@@ -675,6 +679,7 @@ static void rpeer_espnow_task(void *pvParameter)
 
     espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
     uint8_t PeerTable[PEER_TABLE_SIZE * ESP_NOW_ETH_ALEN]= {0};
+	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
     espnow_data_prepare(send_param);
     if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
         ESP_LOGE(TAG, "Send error");
@@ -759,15 +764,19 @@ static void rpeer_espnow_task(void *pvParameter)
                     }
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
-                	printf("%d\n",buf->dir);
-                    if (buf->dir == FORDWARD){
-                    memcpy(back_mac, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);//xxx
-                    ESP_LOGI(TAG, "Back Mac is : "MACSTR"", MAC2STR(recv_cb->mac_addr));
-                    }
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
-					U_data.data=buf->payload;
-					U_data.len = buf ->data_len;
-					uint8_t slave = U_data.data[0];
+					U_data.data = buf->payload;
+					U_data.len = buf->data_len;
+            		uint8_t slave = U_data.data[0];
+                	if (buf->dir == FORDWARD){
+                    vConfigGetNVS(RoutingTable,"RoutingTable");
+                    RoutingTable[slave+OFFSET] = buf->Nodeid;
+                    RoutingTable[buf->Nodeid] = buf->Nodeid;
+                    ESP_LOGI(TAG, "Back Mac is : "MACSTR"", MAC2STR(recv_cb->mac_addr));
+                    vConfigSetNVS(RoutingTable,"RoutingTable");
+            		ESP_LOGI(TAG, "BackMAC  data from: "MACSTR", RT pos %d", MAC2STR(recv_cb->mac_addr),slave+OFFSET);
+                    }
+
 					uint8_t mode = uComGetTransData(slave);
 					switch(buf->dir){
 						case FORDWARD:
@@ -811,9 +820,7 @@ static void rpeer_espnow_task(void *pvParameter)
                 ESP_LOGE(TAG, "Callback type error: %d", evt.id);
                 break;
         }
-
     }
-
 }
 
 static esp_err_t espnow_init(void)
@@ -891,8 +898,6 @@ static void espnow_deinit(espnow_send_param_t *send_param)
     esp_now_deinit();
 }
 
-
-
 static void rx_task(void *arg){
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
 	vConfigGetNVS(HoldingRegister,"HoldingRegister");
@@ -969,6 +974,7 @@ static void rx_task(void *arg){
     dtmp = NULL;
     vTaskDelete(NULL);
 }
+
 void vConfigLoad(){
     esp_err_t err = nvs_flash_init();
 
@@ -1028,9 +1034,6 @@ void vConfigLoad(){
 	            default :
 	                printf("Error (%s) reading!\n", esp_err_to_name(err));
 	        }
-
-
-
 	        // Write
 	        printf("Updating HR in NVS ... \n");
 	        err = nvs_set_blob(nvshandle, "HoldingRegister", HoldingRegister,size_data);
@@ -1056,26 +1059,22 @@ void vConfigLoad(){
 	        Node_ID = HoldingRegister[NodeID];
 	        BaudaRateID = HoldingRegister[BaudaRate];
 	    }
-
-
 }
+
 void vConfigFormatFactory( void ){
+
 	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0};
 	uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
 	uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
-
 	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
 	bzero(RoutingTable,ROUTING_TABLE_SIZE);
 	HoldingRegister[NodeID] = DEFAULT_ID;
 	HoldingRegister[BaudaRate] = DEFAULT_BR;
-
 	vConfigSetNVS(HoldingRegister,"HoldingRegister");
 	vConfigSetNVS(RoutingTable,"RoutingTable");
 	vConfigSetNVS(PeerTable,"PeerTable");
-
-	ESP_LOGI(TAG,"NodeID is: %d con BaudaRate %d",HoldingRegister[NodeID],HoldingRegister[BaudaRate]);
-
 }
+
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
 	static BaseType_t xHigherPriorityTaskWoken;
@@ -1084,7 +1083,6 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
     //xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
     xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken);
 }
-
 
 void FormatFactory(void *arg){
 
@@ -1137,9 +1135,7 @@ void FormatFactory(void *arg){
         printf("GPIO[%d] intr, val: %d\n", GPIO_INPUT_IO_0, gpio_get_level(GPIO_INPUT_IO_0));
         vTaskDelay(1000/portTICK_RATE_MS);
 	}
-
 }
-
 
 void app_main()
 {
@@ -1152,15 +1148,12 @@ void app_main()
     //nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
     //esp_log_level_set(TAG, ESP_LOG_INFO);
-
     vConfigLoad();
-
-
    // Create UART tasks
-    xTaskCreate(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL);
+    xTaskCreatePinnedToCore(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL,1);
     //Create ESPnow Tasks
     wifi_init();
     espnow_init();
-    xTaskCreate(FormatFactory, "FormatFactory", 2048*2, NULL, configMAX_PRIORITIES, NULL);
+    xTaskCreatePinnedToCore(FormatFactory, "FormatFactory", 2048*3, NULL, configMAX_PRIORITIES, NULL,0);
     vNotiLEDinit();
 }
