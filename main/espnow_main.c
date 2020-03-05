@@ -71,11 +71,11 @@ static const int RX_BUF_SIZE = 1024;
 static const int TX_BUF_SIZE = 1024;
 
 
-#define TXD_PIN (GPIO_NUM_33)
-#define RXD_PIN (GPIO_NUM_26)
+#define TXD_PIN 14//(GPIO_NUM_33)
+#define RXD_PIN 25//14//(GPIO_NUM_26)
 
 // RTS for RS485 Half-Duplex Mode manages DE/~RE
-#define RTS_PIN   (25)
+#define RTS_PIN   27//(25)
 
 
 #define CTS_PIN   (19)
