@@ -71,8 +71,8 @@ static const int RX_BUF_SIZE = 1024;
 static const int TX_BUF_SIZE = 1024;
 
 
-#define TXD_PIN 14//(GPIO_NUM_33)
-#define RXD_PIN 25//14//(GPIO_NUM_26)
+#define TXD_PIN 25//(GPIO_NUM_33)
+#define RXD_PIN 14//(GPIO_NUM_26)
 
 // RTS for RS485 Half-Duplex Mode manages DE/~RE
 #define RTS_PIN   27//(25)
@@ -620,13 +620,13 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		data.data[inc] = CRC.byte.HB;
 		data.len= ++inc;
 		printf("AQUI %d bytes limit \n",inc);
-		if (dir == ESP_NOW){
-			data.dir = BACKWARD;
-			xQueueSend(espnow_queue, &data, portMAX_DELAY);
-		}
-		else
+		//if (dir == ESP_NOW){
+			//data.dir = BACKWARD;
+			//xQueueSend(espnow_queue, &data, portMAX_DELAY);
+		//}
+		//else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
-		vNotiUart();
+		//vNotiUart();
 		break;
 	default :
 		data.data[1]+= 0x80;
@@ -638,9 +638,11 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			data.dir = BACKWARD;
 			xQueueSend(espnow_queue, &data, portMAX_DELAY);
 		}
-		else
+		else{
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
 		vNotiUart();
+		}
+		break;
 	}
 
 
