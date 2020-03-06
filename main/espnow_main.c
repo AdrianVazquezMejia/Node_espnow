@@ -160,7 +160,6 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
     if (err != ESP_OK) {
         printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
     } else {
-		printf("Reading Config from NVS ...\n ");
 		size_t size_data = 0;
 		int sw = 0;
 		if(strcmp(Name, "HoldingRegister") == 0){
@@ -182,7 +181,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 				err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
 					switch (err) {
 						case ESP_OK:
-							printf("Config Holding Register loaded: %d BR and ID %d\n",Array[BaudaRate],Array[NodeID] );
+							;
 							break;
 						case ESP_ERR_NVS_NOT_FOUND:
 							printf("The value is not initialized yet!\n");
@@ -198,7 +197,6 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 			err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
 			switch (err) {
 				case ESP_OK:
-					printf("Config RoutingTable loaded\n");
 					break;
 				case ESP_ERR_NVS_NOT_FOUND:
 					printf("The RT is not initialized yet!\n");
@@ -212,7 +210,6 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 			err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
 			switch (err) {
 				case ESP_OK:
-					printf("Peer Table loaded\n");
 					break;
 				case ESP_ERR_NVS_NOT_FOUND:
 					printf("The Peer Table is not initialized yet!\n");
@@ -229,7 +226,6 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 void vConfigSetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
-    printf("Reading Config from NVS ...\n ");
     size_t size_data = 0;
     int sw = 0;
     if(strcmp(Name, "HoldingRegister") == 0){
@@ -247,31 +243,22 @@ void vConfigSetNVS(uint8_t *Array , const char *Name){
     switch(sw){
 
     	case 1:
-	        printf("Updating HR in NVS ... \n");
 	        err = nvs_set_blob(nvshandle, "HoldingRegister", Array,size_data);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 		    break;
 
 		case 2:
-	        printf("Updating RT in NVS ... \n");
 	        err = nvs_set_blob(nvshandle, "RoutingTable", Array,size_data);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 	        break;
 
 		case 3:
-	        printf("Updating HR in NVS ... \n");
 	        err = nvs_set_blob(nvshandle, "PeerTable", Array,size_data);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 	        break;
 		default :
 				printf("Error (%s) reading!\n", esp_err_to_name(err));
 				break;
     }
 
-    printf("Committing updates in NVS ... ");
     err = nvs_commit(nvshandle);
-    printf((err != ESP_OK) ? "Failed!\n" : "Config Done\n");
-
     // Close
     nvs_close(nvshandle);
 }
@@ -356,9 +343,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
     vConfigGetNVS(HoldingRegister,"HoldingRegister");
     buf->Nodeid = HoldingRegister[NodeID];
-    ESP_LOGI(TAG, "Node Id in data prepare is : %d", buf-> Nodeid);
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
-
     buf->state = send_param->state;
     buf->seq_num = s_example_espnow_seq[buf->type]++;
     buf->crc = 0;
@@ -422,13 +407,13 @@ void espnow_send(void *pvParameter){
     	if ((des_node == HoldingRegister[NodeID])||(U_data.dir == BACKWARD)){
         	des_node = RoutingTable[OFFSET+U_data.data[0]];
     		memcpy(send_param->dest_mac,PeerTable+(ESP_NOW_ETH_ALEN * des_node),ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
-    		printf("ITS AND ANSWER FROM A SLAVE TO MASTER, To : %d , slave: %d\n", RoutingTable[OFFSET+U_data.data[0]],U_data.data[0]);
+    		ESP_LOGI(TAG,"ANSWERING TO MASTER  from node :%d, and slave: %d\n", RoutingTable[OFFSET+U_data.data[0]],U_data.data[0]);
     		send_param->dir = BACKWARD;
     	}
     	else {
     	   	posicion = ESP_NOW_ETH_ALEN * des_node;
     		memcpy(send_param->dest_mac, PeerTable + posicion,ESP_NOW_ETH_ALEN); //xxx
-    		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR" pos %d", des_node, MAC2STR(send_param->dest_mac), posicion);
+    		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR(send_param->dest_mac));
     	}
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
@@ -450,17 +435,13 @@ uint16_t uComGetTransData(int slave){
     uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
 	vConfigGetNVS(RoutingTable,"RoutingTable");
 	uint8_t des_slave = RoutingTable[slave];
-	ESP_LOGI(TAG, "The informations is for %d or %d \n", des_slave,RoutingTable[0]);
 	if (HoldingRegister[NodeID] == slave) {
-		ESP_LOGI(TAG, "The informations is for ME! node %d\n", slave);
 		return NODECONFIG;
 	}
 	else if (des_slave == HoldingRegister[NodeID]){
-			ESP_LOGI(TAG, "The informations is for my RTU! RTU %d\n", slave);
 			return SERIAL;
 	}
 	else {
-		ESP_LOGI(TAG, "The informations is NOT for ME! node %d to node %d\n", slave, des_slave);
 		return JUMP;
 	}
 	return -1;
@@ -527,13 +508,10 @@ void UARTinit(int BTid) {
 uint8_t uComDirection(uint8_t *Slave){
 uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
 vConfigGetNVS(HoldingRegister , "HoldingRegister");
-printf("%d",*Slave);
 	if (HoldingRegister[NodeID] == *Slave){
-		printf("ITS FOR ME!\n");
 		return NODE;
 		}
 		else{
-			printf("ITS FOR OTHER :-(!\n");
 			return EX_SLAVE;
 		}
 	return -1;
@@ -558,7 +536,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 	switch(function){
 	case WRITE_HOLDING_REGISTER:
 		if (Address.Val == 0 && Value.Val <=100){
-			printf("Node Id not allowed, must be greater than 100\n");
+			ESP_LOGI(TAG,"Node Id not allowed, must be greater than 100\n");
 			break;
 		}
 
@@ -568,7 +546,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			RoutingTable[Address.Val-offset] = HoldingRegister[Address.Val];
 			vConfigSetNVS(RoutingTable,"RoutingTable");
 		}
-		printf( "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
+		ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
 			xQueueSend(espnow_queue, &data, portMAX_DELAY);
@@ -600,17 +578,15 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		break;
 
 	case READ_HOLDING:
-		printf("Reading HoldingRegister\n");
+		ESP_LOGI(TAG,"Reading HoldingRegister\n");
 		data.data[2] = data.data[5]*2;//xxx what if greater than ff number of bytes
 		uint8_t inc =3;
 		uint8_t data_limit = data.data[5];
-		printf("El numero de bytes is %d  y la direccion de inicio es %d\n", data_limit, Address.Val);
 		int i = 0;
 		while( i < data_limit){
 			data.data[inc] = 0;
 			inc++;
 			data.data[inc] =HoldingRegister[Address.Val+i];
-			//printf("inc is %d\n", inc);
 			inc++;
 			i++;
 		}
@@ -619,7 +595,6 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		inc++;
 		data.data[inc] = CRC.byte.HB;
 		data.len= ++inc;
-		printf("AQUI %d bytes limit \n",inc);
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
 			xQueueSend(espnow_queue, &data, portMAX_DELAY);
@@ -772,11 +747,9 @@ static void rpeer_espnow_task(void *pvParameter)
                     vConfigGetNVS(RoutingTable,"RoutingTable");
                     RoutingTable[slave+OFFSET] = buf->Nodeid;
                     RoutingTable[buf->Nodeid] = buf->Nodeid;
-                    ESP_LOGI(TAG, "Back Mac is : "MACSTR"", MAC2STR(recv_cb->mac_addr));
                     vConfigSetNVS(RoutingTable,"RoutingTable");
-            		ESP_LOGI(TAG, "BackMAC  data from: "MACSTR", RT pos %d", MAC2STR(recv_cb->mac_addr),slave+OFFSET);
+            		ESP_LOGI(TAG, "BackMAC  data from: "MACSTR",  of slave %d ", MAC2STR(recv_cb->mac_addr),slave);
                     }
-
 					uint8_t mode = uComGetTransData(slave);
 					switch(buf->dir){
 						case FORDWARD:
@@ -799,7 +772,6 @@ static void rpeer_espnow_task(void *pvParameter)
 							case BACKWARD:
 								vConfigGetNVS(RoutingTable,"RoutingTable");
 		                        vConfigGetNVS(PeerTable,"PeerTable");
-								ESP_LOGI(TAG,"BACKWARD");
 								memcpy(back_mac, PeerTable+(RoutingTable[slave+OFFSET]*ESP_NOW_ETH_ALEN), ESP_NOW_ETH_ALEN);
 								if(memcmp(back_mac, broadcast_mac, ESP_NOW_ETH_ALEN)==0){
 									uart_write_bytes(UART_NUM_1,(const char*) U_data.data ,U_data.len);
@@ -920,7 +892,6 @@ static void rx_task(void *arg){
             switch(event.type) {
                 //Event of UART receving data
                 case UART_DATA:
-                    ESP_LOGI(RX_TASK_TAG, "[UART DATA]: %d", event.size);
                     uart_read_bytes(UART_NUM_1, dtmp, event.size, portMAX_DELAY);
                     uint8_t info = uComDirection(&dtmp[0]);
                     U_data.data = dtmp;
@@ -1000,7 +971,6 @@ void vConfigLoad(){
 
 	        uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
 	        size_t size_Peer = sizeof(PeerTable);
- 	        //memset(PeerTable,255, size_Peer);
 	        HoldingRegister[NodeID]= DEFAULT_ID;
 	        HoldingRegister[BaudaRate]= DEFAULT_BR;
 
@@ -1137,7 +1107,6 @@ void FormatFactory(void *arg){
 			}
 		}
 		t = 0;
-        printf("GPIO[%d] intr, val: %d\n", GPIO_INPUT_IO_0, gpio_get_level(GPIO_INPUT_IO_0));
         vTaskDelay(1000/portTICK_RATE_MS);
 	}
 }
