@@ -71,8 +71,8 @@ static const int RX_BUF_SIZE = 1024;
 static const int TX_BUF_SIZE = 1024;
 
 
-#define TXD_PIN 14//(GPIO_NUM_33)
-#define RXD_PIN 25//14//(GPIO_NUM_26)
+#define TXD_PIN 25//(GPIO_NUM_33)
+#define RXD_PIN 14//14//(GPIO_NUM_26)
 
 // RTS for RS485 Half-Duplex Mode manages DE/~RE
 #define RTS_PIN   27//(25)
@@ -797,14 +797,19 @@ static void rpeer_espnow_task(void *pvParameter)
 							}
 							break;
 							case BACKWARD:
+								vConfigGetNVS(RoutingTable,"RoutingTable");
+		                        vConfigGetNVS(PeerTable,"PeerTable");
+								ESP_LOGI(TAG,"BACKWARD");
+								memcpy(back_mac, PeerTable+(RoutingTable[slave+OFFSET]*ESP_NOW_ETH_ALEN), ESP_NOW_ETH_ALEN);
 								if(memcmp(back_mac, broadcast_mac, ESP_NOW_ETH_ALEN)==0){
 									uart_write_bytes(UART_NUM_1,(const char*) U_data.data ,U_data.len);
 									vNotiUart();
+									ESP_LOGI(TAG,"SERIAL response");
 								}
 								else {
 									U_data.dir = buf ->dir;
-									ESP_LOGI(TAG,"JUMP %d: ", buf ->dir );
-									xQueueSend(espnow_queue, &U_data, portMAX_DELAY);
+									ESP_LOGI(TAG,"JUMP BACK %d: ", buf ->dir );
+									xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
 								};
 					}
 
