@@ -14,8 +14,9 @@
 #include "esp_event_loop.h"
 #include "esp_log.h"
 #include "esp_system.h"
-#include "rom/ets_sys.h"
-#include "rom/crc.h"
+#include "esp32/rom/ets_sys.h"
+#include "esp32/rom/crc.h"
+#include "driver/gpio.h"
 
 #define GPIO_OUTPUT_IO_19	19
 
