@@ -17,7 +17,7 @@
 #include "rom/ets_sys.h"
 #include "rom/crc.h"
 
-#define GPIO_OUTPUT_IO_19	19
+#define GPIO_OUTPUT_IO_19	2
 
 
 void vNotiLEDinit(void){

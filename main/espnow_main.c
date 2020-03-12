@@ -152,7 +152,6 @@ static void wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
 #endif
 }
-
 void vConfigGetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 
@@ -206,7 +205,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 			}
 			break;
 
-			case 3:
+			case 3:nvs_close(nvshandle);
 			err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
 			switch (err) {
 				case ESP_OK:
@@ -353,6 +352,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 
 void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 	esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
+	if (esp_now_is_peer_exist(mac) == false) {
 	if (peer == NULL) {
 		ESP_LOGE(TAG, "Malloc peer information fail");
 		return;
@@ -364,8 +364,9 @@ void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 	memcpy(peer->lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
 	memcpy(peer->peer_addr, mac, ESP_NOW_ETH_ALEN);
 	ESP_ERROR_CHECK( esp_now_add_peer(peer) );
-	ESP_LOGI(TAG, "MAC succefully "MACSTR" added ", MAC2STR(mac));
+	ESP_LOGI(TAG, "MAC succefully "MACSTR" added", MAC2STR(mac));
 	free(peer);
+	}
 }
 
 void vEspnowGetOldPeers(void){
@@ -379,6 +380,7 @@ void vEspnowGetOldPeers(void){
 		memcpy(mac,PeerTable + (RoutingTable[j]* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);//xxx
 		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + RoutingTable[j]* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0){
 			RegisterPeer(mac);
+			ESP_LOGI(TAG, "Node %d of position %d added",RoutingTable[j],j );
 		}
 	}
 }
@@ -743,6 +745,7 @@ static void rpeer_espnow_task(void *pvParameter)
 					U_data.data = buf->payload;
 					U_data.len = buf->data_len;
             		uint8_t slave = U_data.data[0];
+            		vNotiUart();
                 	if (buf->dir == FORDWARD){
                     vConfigGetNVS(RoutingTable,"RoutingTable");
                     RoutingTable[slave+OFFSET] = buf->Nodeid;
@@ -1119,7 +1122,7 @@ void app_main()
         ESP_ERROR_CHECK( nvs_flash_erase() );
         ret = nvs_flash_init();
     }
-    //nvs_flash_erase();
+   // nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
     //esp_log_level_set(TAG, ESP_LOG_INFO);
     vConfigLoad();
