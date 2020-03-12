@@ -911,6 +911,8 @@ static void rx_task(void *arg){
                     	vConfigSetNode(U_data,UART);
                     	break;
                     }
+                    uart_flush_input(UART_NUM_1);
+                    xQueueReset(uart1_queue);
                     vNotiUart();
                     break;
                 //Event of HW FIFO overflow detected
