@@ -205,7 +205,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 			}
 			break;
 
-			case 3:nvs_close(nvshandle);
+			case 3:
 			err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
 			switch (err) {
 				case ESP_OK:
@@ -551,7 +551,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
-			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
@@ -567,7 +567,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		    printf("Restarting \n");
 		    if (dir == ESP_NOW){
 				data.dir = BACKWARD;
-				xQueueSend(espnow_queue, &data, portMAX_DELAY);
+				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 			}
 			else
 		    uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
@@ -599,7 +599,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		data.len= ++inc;
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
-			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
@@ -613,7 +613,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		data.data[4] = CRC.byte.HB;
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
-			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
@@ -632,7 +632,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		data.data[4] = CRC.byte.HB;
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
-			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
