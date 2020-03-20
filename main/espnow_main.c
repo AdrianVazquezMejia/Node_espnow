@@ -154,7 +154,6 @@ static void wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
 #endif
 }
-
 void vConfigGetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 
@@ -355,6 +354,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 
 void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 	esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
+	if (esp_now_is_peer_exist(mac) == false) {
 	if (peer == NULL) {
 		ESP_LOGE(TAG, "Malloc peer information fail");
 		return;
@@ -366,8 +366,9 @@ void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 	memcpy(peer->lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
 	memcpy(peer->peer_addr, mac, ESP_NOW_ETH_ALEN);
 	ESP_ERROR_CHECK( esp_now_add_peer(peer) );
-	ESP_LOGI(TAG, "MAC succefully "MACSTR" added ", MAC2STR(mac));
+	ESP_LOGI(TAG, "MAC succefully "MACSTR" added", MAC2STR(mac));
 	free(peer);
+	}
 }
 
 void vEspnowGetOldPeers(void){
@@ -381,6 +382,7 @@ void vEspnowGetOldPeers(void){
 		memcpy(mac,PeerTable + (RoutingTable[j]* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);//xxx
 		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + RoutingTable[j]* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0){
 			RegisterPeer(mac);
+			ESP_LOGI(TAG, "Node %d of position %d added",RoutingTable[j],j );
 		}
 	}
 }
@@ -551,7 +553,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
-			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
@@ -567,7 +569,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		    printf("Restarting \n");
 		    if (dir == ESP_NOW){
 				data.dir = BACKWARD;
-				xQueueSend(espnow_queue, &data, portMAX_DELAY);
+				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 			}
 			else
 		    uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
@@ -599,7 +601,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		data.len= ++inc;
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
-			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
@@ -613,7 +615,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		data.data[4] = CRC.byte.HB;
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
-			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
@@ -632,7 +634,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		data.data[4] = CRC.byte.HB;
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
-			xQueueSend(espnow_queue, &data, portMAX_DELAY);
+			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
 		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
@@ -745,6 +747,7 @@ static void rpeer_espnow_task(void *pvParameter)
 					U_data.data = buf->payload;
 					U_data.len = buf->data_len;
             		uint8_t slave = U_data.data[0];
+            		vNotiUart();
                 	if (buf->dir == FORDWARD){
                     vConfigGetNVS(RoutingTable,"RoutingTable");
                     RoutingTable[slave+OFFSET] = buf->Nodeid;
@@ -910,6 +913,8 @@ static void rx_task(void *arg){
                     	vConfigSetNode(U_data,UART);
                     	break;
                     }
+                    uart_flush_input(UART_NUM_1);
+                    xQueueReset(uart1_queue);
                     vNotiUart();
                     break;
                 //Event of HW FIFO overflow detected
@@ -1121,7 +1126,7 @@ void app_main()
         ESP_ERROR_CHECK( nvs_flash_erase() );
         ret = nvs_flash_init();
     }
-    //nvs_flash_erase();
+   // nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
     //esp_log_level_set(TAG, ESP_LOG_INFO);
     vConfigLoad();

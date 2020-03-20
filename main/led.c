@@ -18,7 +18,7 @@
 #include "esp32/rom/crc.h"
 #include "driver/gpio.h"
 
-#define GPIO_OUTPUT_IO_19	19
+#define GPIO_OUTPUT_IO_19	2
 
 
 void vNotiLEDinit(void){
