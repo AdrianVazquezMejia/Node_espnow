@@ -400,9 +400,7 @@ void espnow_send(void *pvParameter){
 	uint8_t des_node = 0;
 	uint16_t posicion = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
-    	ESP_LOGI(TAG,"Send Task activated");
-
-
+    	ESP_LOGI(TAG,"Send Function Activated");
     	vConfigGetNVS(RoutingTable,"RoutingTable");
     	vConfigGetNVS(HoldingRegister,"HoldingRegister");
 	   	vConfigGetNVS(PeerTable,"PeerTable");
@@ -649,7 +647,7 @@ static void rpeer_espnow_task(void *pvParameter)
     int recv_magic = 0;
     int ret;
     int Peer_Quantity = 0;
-    int count=20;
+    int count=10;
     esp_uart_data_t U_data;
     vTaskDelay(5000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "Start sending broadcast data");
@@ -672,6 +670,7 @@ static void rpeer_espnow_task(void *pvParameter)
             {
                 espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
                 ESP_LOGI(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
+
                 if (count==0) {
                     break;
                 }
