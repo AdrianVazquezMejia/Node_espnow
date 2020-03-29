@@ -118,14 +118,15 @@ static SemaphoreHandle_t xSemaphore = NULL;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
-uint8_t RoutingTable[ROUTING_TABLE_SIZE] ;
-uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
-uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ;
+
 
 static void espnow_deinit(espnow_send_param_t *send_param);
 static uint8_t Peer[6][6];
 static uint8_t Node_ID;
 static uint8_t BaudaRateID;
+static uint8_t RoutingTable[ROUTING_TABLE_SIZE];
+static uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
+static uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN];
 static esp_err_t example_event_handler(void *ctx, system_event_t *event)
 {
     switch(event->event_id) {
@@ -375,10 +376,8 @@ void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 }
 
 void vEspnowGetOldPeers(void){
-	ESP_LOGI(TAG, "Registering");
-
+	ESP_LOGI(TAG, "Registering Old Peers");
 	uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
-
 	for (uint16_t j = 0 ; j <=255 ; j++){
 		memcpy(mac,PeerTable + (RoutingTable[j]* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);//xxx
 		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + RoutingTable[j]* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0){
@@ -395,7 +394,6 @@ void espnow_send(void *pvParameter){
     send_param->unicast = true;
     send_param->broadcast = false;
     send_param->state = 0;
-
 	uint8_t des_node = 0;
 	uint16_t posicion = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
@@ -643,7 +641,6 @@ static void rpeer_espnow_task(void *pvParameter)
     ESP_LOGI(TAG, "Start sending broadcast data");
     uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
     /* Start sending broadcast ESPNOW data. */
-
     espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
     espnow_data_prepare(send_param);
     if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
@@ -950,13 +947,8 @@ void vConfigLoad(){
 
 	        // Read
 	        printf("Reading Config from NVS ...\n ");
-	        uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
 	        size_t size_data = sizeof(HoldingRegister);
-
-	        uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
 	        size_t size_RT = sizeof(RoutingTable);
-
-	        uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
 	        size_t size_Peer = sizeof(PeerTable);
 	        HoldingRegister[NodeID]= DEFAULT_ID;
 	        HoldingRegister[BaudaRate]= DEFAULT_BR;
@@ -1024,7 +1016,6 @@ void vConfigLoad(){
 }
 
 void vConfigFormatFactory( void ){//xxx Optimize this function
-
 
 	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
 	bzero(RoutingTable,ROUTING_TABLE_SIZE);
