@@ -276,7 +276,7 @@ void vConfigSetNVS(uint8_t *Array , const char *Name){
 static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
     espnow_event_t evt;
-    espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
+    espnow_event_send_cb_t *send_cb = &evt.info.send_t.info.send_cb;
     if (mac_addr == NULL) {
         ESP_LOGE(TAG, "Send cb arg error");
         return;
@@ -379,7 +379,7 @@ void vEspnowGetOldPeers(void){
 	ESP_LOGI(TAG, "Registering Old Peers");
 	uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
 	for (uint16_t j = 0 ; j <=255 ; j++){
-		memcpy(mac,PeerTable + (RoutingTable[j]* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);//xxx
+		memcpy(mac,PeerTable + (RoutingTable[j]* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
 		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + RoutingTable[j]* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0){
 			RegisterPeer(mac);
 			ESP_LOGI(TAG, "Node %d of position %d added",RoutingTable[j],j );
@@ -402,13 +402,13 @@ void espnow_send(void *pvParameter){
     	send_param->dir  = FORDWARD;
     	if ((des_node == HoldingRegister[NodeID])||(U_data.dir == BACKWARD)){
         	des_node = RoutingTable[OFFSET+U_data.data[0]];
-    		memcpy(send_param->dest_mac,PeerTable+(ESP_NOW_ETH_ALEN * des_node),ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
+    		memcpy(send_param->dest_mac,PeerTable+(ESP_NOW_ETH_ALEN * des_node),ESP_NOW_ETH_ALEN);
     		ESP_LOGI(TAG,"ANSWERING TO MASTER  from node :%d, and slave: %d\n", RoutingTable[OFFSET+U_data.data[0]],U_data.data[0]);
     		send_param->dir = BACKWARD;
     	}
     	else {
     	   	posicion = ESP_NOW_ETH_ALEN * des_node;
-    		memcpy(send_param->dest_mac, PeerTable + posicion,ESP_NOW_ETH_ALEN); //xxx
+    		memcpy(send_param->dest_mac, PeerTable + posicion,ESP_NOW_ETH_ALEN);
     		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR(send_param->dest_mac));
     	}
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
@@ -569,7 +569,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 
 	case READ_HOLDING:
 		ESP_LOGI(TAG,"Reading HoldingRegister\n");
-		data.data[2] = data.data[5]*2;//xxx what if greater than ff number of bytes
+		data.data[2] = data.data[5]*2;//xxx what if greater than 125 number of bytes
 		uint8_t inc =3;
 		uint8_t data_limit = data.data[5];
 		int i = 0;
@@ -636,6 +636,7 @@ static void rpeer_espnow_task(void *pvParameter)
     int ret;
     int Peer_Quantity = 0;
     int count=10;
+    uint8_t tries = 0;
     esp_uart_data_t U_data;
     vTaskDelay(5000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "Start sending broadcast data");
@@ -653,26 +654,50 @@ static void rpeer_espnow_task(void *pvParameter)
         switch (evt.id) {
             case ESPNOW_SEND_CB:
             {
-                espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
-                ESP_LOGI(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
+                espnow_send_t *sendinf = &evt.info.send_t;
+                switch(sendinf->id){
+                	case ESPNOW_FROM_CB:
+                	{
+                        espnow_event_send_cb_t *send_cb = &evt.info.send_t.info.send_cb;
+						ESP_LOGI(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
+						if (memcmp(send_cb->mac_addr, broadcast_mac , ESP_NOW_ETH_ALEN) ==0){
+							if (count==0) {
+								break;
+							}
+							count--;
+							/*Delay before send the next data*/
+							if (send_param->delay > 0) {
+								vTaskDelay(send_param->delay/portTICK_RATE_MS);
+							}
 
-                if (count==0) {
-                    break;
-                }
-                count--;
-                /*Delay before send the next data*/
-                if (send_param->delay > 0) {
-                    vTaskDelay(send_param->delay/portTICK_RATE_MS);
+							espnow_data_prepare(send_param);
+							/* Send the next data after the previous data is sent. */
+							if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
+								ESP_LOGE(TAG, "Send error");
+								espnow_deinit(send_param);
+								vTaskDelete(NULL);
+							}
+							break;
+						}
+
+						else if ((send_cb->status == 0)||(tries==5))
+								break;
+							 else{
+								tries--;
+			                	xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
+							 }
+						break;
+                	}
+                	case ESPNOW_TO_SEND:
+                	{
+                		ESP_LOGI(TAG,"Envando a la cola de enviar");
+                		espnow_send_data_t *espnow_data = &evt.info.send_t.info;
+                		U_data = espnow_data->send_data;
+                		xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
+                		break;
+                	}
                 }
 
-                espnow_data_prepare(send_param);
-                /* Send the next data after the previous data is sent. */
-                if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
-                    ESP_LOGE(TAG, "Send error");
-                    espnow_deinit(send_param);
-                    vTaskDelete(NULL);
-                }
-                /*Create the tasks for communication with UART*/
                 break;
             }
             case ESPNOW_RECV_CB:
@@ -703,7 +728,7 @@ static void rpeer_espnow_task(void *pvParameter)
                         ESP_ERROR_CHECK( esp_now_add_peer(peer) );
                         Peer_Quantity++;
 
-                        memcpy(Peer[ Peer_Quantity ], recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
+                        memcpy(Peer[ Peer_Quantity ], recv_cb->mac_addr, ESP_NOW_ETH_ALEN);// xxx peer delete
                         ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(Peer[1]));
                         free(peer);
                         /* Send the response to the new peer, for register myself with it*/
