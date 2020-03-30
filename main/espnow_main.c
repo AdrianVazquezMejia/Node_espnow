@@ -64,7 +64,6 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "led.h"
 #include "espdefine.h"
 #include "driver/gpio.h"
-//#include "format_factory.h"
 
 
 
@@ -126,6 +125,7 @@ static uint8_t Node_ID;
 static uint8_t BaudaRateID;
 static uint8_t RoutingTable[ROUTING_TABLE_SIZE];
 static uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
+static uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];
 static uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN];
 static esp_err_t example_event_handler(void *ctx, system_event_t *event)
 {
@@ -517,100 +517,110 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 	INT_VAL CRC;
 	Value.byte.HB = data.data[4];
 	Value.byte.LB = data.data[5];
-	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
-	uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
-	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-	vConfigGetNVS(RoutingTable,"RoutingTable");
 	uint16_t offset = 256;
 
 	if (CRC16(data.data,data.len) == 0){
-	switch(function){
-	case WRITE_HOLDING_REGISTER:
-		if (Address.Val == 0 && Value.Val <=100){
-			ESP_LOGI(TAG,"Node Id not allowed, must be greater than 100\n");
-			break;
-		}
-
-		HoldingRegister[Address.Val] = Value.Val;
-		vConfigSetNVS(HoldingRegister,"HoldingRegister");
-		if(Address.Val >=256){
-			RoutingTable[Address.Val-offset] = HoldingRegister[Address.Val];
-			vConfigSetNVS(RoutingTable,"RoutingTable");
-		}
-		ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
-		if (dir == ESP_NOW){
-			data.dir = BACKWARD;
-			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
-		}
-		else
-		uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 		vNotiUart();
-		if(Address.Val == BaudaRate){
-			vTaskDelay(500);
-			UARTinit(HoldingRegister[BaudaRate]);
-		}
-		break;
+		switch(function){
+		case WRITE_HOLDING_REGISTER:
+			if (Address.Val == 0 && Value.Val <=100){
+				ESP_LOGI(TAG,"Node Id not allowed, must be greater than 100\n");
+				break;
+			}
 
-	case WRITE_COIL:
-		if ((Address.Val == 0)&&(Value.Val ==0xFF00)){
-		    printf("Restarting \n");
-		    if (dir == ESP_NOW){
+			HoldingRAM[Address.Val] = Value.Val;
+			ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRAM[Address.Val],Address.Val);
+			if (dir == ESP_NOW){
 				data.dir = BACKWARD;
 				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 			}
 			else
-		    uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
-			vNotiUart();
-			vTaskDelay(10);
-		    fflush(stdout);
-		    esp_restart();
+			uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 			break;
-		}
-		break;
 
-	case READ_HOLDING:
-		ESP_LOGI(TAG,"Reading HoldingRegister\n");
-		data.data[2] = data.data[5]*2;//xxx what if greater than 125 number of bytes
-		uint8_t inc =3;
-		uint8_t data_limit = data.data[5];
-		int i = 0;
-		while( i < data_limit){
-			data.data[inc] = 0;
-			inc++;
-			data.data[inc] =HoldingRegister[Address.Val+i];
-			inc++;
-			i++;
-		}
-		CRC.Val = CRC16(data.data,inc);
-		data.data[inc] = CRC.byte.LB;
-		inc++;
-		data.data[inc] = CRC.byte.HB;
-		data.len= ++inc;
-		if (dir == ESP_NOW){
-			data.dir = BACKWARD;
-			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
-		}
-		else
-		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
-		vNotiUart();
-		break;
-	default :
-		data.data[1]+= 0x80;
-		data.data[2] = 0x01;
-		CRC.Val = CRC16(data.data,3);
-		data.data[3] = CRC.byte.LB;
-		data.data[4] = CRC.byte.HB;
-		if (dir == ESP_NOW){
-			data.dir = BACKWARD;
-			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
-		}
-		else
-		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
-		vNotiUart();
-	}
+		case WRITE_COIL:
+			switch(Address.Val){
+			case RESTART:
+				if ((Address.Val == 0)&&(Value.Val ==0xFF00)){
+					printf("Restarting \n");
+					if (dir == ESP_NOW){
+						data.dir = BACKWARD;
+						xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+					}
+					else
+					uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+					vTaskDelay(10);
+					fflush(stdout);
+					esp_restart();
+				}
+				break;
+			case SAVE_RAM:
+				 if (HoldingRegister[BaudaRate] != HoldingRAM[BaudaRate]){
+						vTaskDelay(500);
+						UARTinit(HoldingRegister[BaudaRate]);
+				 }
+				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
+				 memcpy(RoutingTable,HoldingRAM+ offset,ROUTING_TABLE_SIZE);
+				 if (dir == ESP_NOW){
+					 data.dir = BACKWARD;
+					 xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+				 }
+				 else
+					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+				 break;
+			case SAVE_FLASH:
+				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
+				 memcpy(RoutingTable,HoldingRAM+ offset,ROUTING_TABLE_SIZE);
+				 vConfigSetNVS(RoutingTable,"RoutingTable");
+				 vConfigSetNVS(HoldingRegister,"HoldingRegister");
+				 if (dir == ESP_NOW){
+					data.dir = BACKWARD;
+					xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+				 }
+				 else
+					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+				 break;
+			}
+			break;
 
-
-
+		case READ_HOLDING:
+			ESP_LOGI(TAG,"Reading HoldingRegister\n");
+			data.data[2] = data.data[5]*2;//xxx what if greater than 125 number of bytes
+			uint8_t inc =3;
+			uint8_t data_limit = data.data[5];
+			int i = 0;
+			while( i < data_limit){// xxx cambiar por un for
+				data.data[inc] = 0;
+				inc++;
+				data.data[inc] =HoldingRegister[Address.Val+i];
+				inc++;
+				i++;
+			}
+			CRC.Val = CRC16(data.data,inc);
+			data.data[inc] = CRC.byte.LB;
+			inc++;//xxx incrustar en la linea de arriba
+			data.data[inc] = CRC.byte.HB;
+			data.len= ++inc;
+			if (dir == ESP_NOW){
+				data.dir = BACKWARD;
+				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+			}
+			else
+				uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
+			break;
+		default :
+			data.data[1]+= 0x80;
+			data.data[2] = 0x01;
+			CRC.Val = CRC16(data.data,3);
+			data.data[3] = CRC.byte.LB;
+			data.data[4] = CRC.byte.HB;
+			if (dir == ESP_NOW){
+				data.dir = BACKWARD;
+				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+			}
+			else
+				uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
+		}
 }
 	else {
 		ESP_LOGE(TAG_MB," CRC ERROR is %4x", CRC16(data.data,data.len));
@@ -624,8 +634,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
-		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
-		vNotiUart();
+			uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
 	}
 }
 static void rpeer_espnow_task(void *pvParameter)

@@ -106,6 +106,11 @@ enum{
 	UART
 };
 
+enum {
+	RESTART,
+	SAVE_RAM,
+	SAVE_FLASH
+} ;
 typedef union
 {
     uint16_t Val;
