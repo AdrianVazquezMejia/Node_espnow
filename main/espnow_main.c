@@ -283,6 +283,7 @@ static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status
     }
 
     evt.id = ESPNOW_SEND_CB;
+    evt.info.send_t.id = ESPNOW_FROM_CB;
     memcpy(send_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
     send_cb->status = status;
     if (xQueueSend(espnow_queue, &evt, portMAX_DELAY) != pdTRUE) {
@@ -683,13 +684,14 @@ static void rpeer_espnow_task(void *pvParameter)
 						else if ((send_cb->status == 0)||(tries==5))
 								break;
 							 else{
-								tries--;
+								tries++;
 			                	xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
 							 }
 						break;
                 	}
                 	case ESPNOW_TO_SEND:
                 	{
+                		tries = 0;
                 		ESP_LOGI(TAG,"Envando a la cola de enviar");
                 		espnow_send_data_t *espnow_data = &evt.info.send_t.info;
                 		U_data = espnow_data->send_data;
@@ -891,6 +893,7 @@ static void rx_task(void *arg){
     static const char *RX_TASK_TAG = "RX_TASK";
     esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
     esp_uart_data_t U_data;
+    espnow_event_t evt;
     for(;;) {
         //Waiting for UART event.
         if(xQueueReceive(uart1_queue, (void * )&event, (portTickType)portMAX_DELAY)) {
@@ -907,7 +910,11 @@ static void rx_task(void *arg){
                     switch(info){
                     case EX_SLAVE:
                     	// Query of response BACK
-                    	xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
+                        ESP_LOGI(RX_TASK_TAG,"Sending to new queue");
+                    	evt.id = ESPNOW_SEND_CB;
+                    	evt.info.send_t.id = ESPNOW_TO_SEND;
+                    	evt.info.send_t.info.send_data = U_data;
+                    	xQueueSend(espnow_queue,&evt,(portTickType)portMAX_DELAY);
 						break;
                     case NODE:
                     	// TO ME
