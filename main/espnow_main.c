@@ -978,23 +978,16 @@ static void rx_task(void *arg){
 
 void vConfigLoad(){
     esp_err_t err = nvs_flash_init();
-
-
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
 	    if (err != ESP_OK) {
 	        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
 	    } else {
-	        printf("Done\n");
-
-	        // Read
 	        printf("Reading Config from NVS ...\n ");
 	        size_t size_data = sizeof(HoldingRegister);
 	        size_t size_RT = sizeof(RoutingTable);
 	        size_t size_Peer = sizeof(PeerTable);
 	        HoldingRegister[NodeID]= DEFAULT_ID;
 	        HoldingRegister[BaudaRate]= DEFAULT_BR;
-
-
 	        err = nvs_get_blob(nvshandle, "HoldingRegister", HoldingRegister, &size_data);
 	        switch (err) {
 	            case ESP_OK:
@@ -1029,26 +1022,7 @@ void vConfigLoad(){
 	            default :
 	                printf("Error (%s) reading!\n", esp_err_to_name(err));
 	        }
-	        // Write
-	        printf("Updating HR in NVS ... \n");
-	        err = nvs_set_blob(nvshandle, "HoldingRegister", HoldingRegister,size_data);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-
-	        printf("Updating RT in NVS ... \n");
-	        err = nvs_set_blob(nvshandle, "RoutingTable", RoutingTable,size_RT);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-	        printf("Updating PT in NVS ... \n");
-	        err = nvs_set_blob(nvshandle, "PeerTable", PeerTable,size_Peer);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-	        // Commit written value.
-	        // After setting any values, nvs_commit() must be called to ensure changes are written
-	        // to flash storage. Implementations may write to storage at other times,
-	        // but this is not guaranteed.
-	        printf("Committing updates in NVS ... ");
-	        err = nvs_commit(nvshandle);
 	        printf((err != ESP_OK) ? "Failed!\n" : "Config Done\n");
-
-	        // Close
 	        nvs_close(nvshandle);
 
 	        Node_ID = HoldingRegister[NodeID];
@@ -1056,7 +1030,7 @@ void vConfigLoad(){
 	    }
 }
 
-void vConfigFormatFactory( void ){//xxx Optimize this function
+void vConfigFormatFactory( void ){
 
 	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
 	bzero(RoutingTable,ROUTING_TABLE_SIZE);
