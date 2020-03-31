@@ -127,7 +127,7 @@ static uint8_t RoutingTable[ROUTING_TABLE_SIZE];
 static uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
 static uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];
 static uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN];
-static esp_err_t example_event_handler(void *ctx, system_event_t *event)
+static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 {
     switch(event->event_id) {
     case SYSTEM_EVENT_STA_START:
@@ -143,7 +143,7 @@ static esp_err_t example_event_handler(void *ctx, system_event_t *event)
 static void wifi_init(void)
 {
     tcpip_adapter_init();
-    ESP_ERROR_CHECK( esp_event_loop_init(example_event_handler, NULL) );
+    ESP_ERROR_CHECK( esp_event_loop_init(wifi_event_handler, NULL) );
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK( esp_wifi_init(&cfg) );
     ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
@@ -1072,59 +1072,30 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
 	static BaseType_t xHigherPriorityTaskWoken;
 	xHigherPriorityTaskWoken = pdFALSE;
-   // uint32_t gpio_num = (uint32_t) arg;
-    //xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
     xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken);
 }
 
 void FormatFactory(void *arg){
-
-    gpio_config_t io_conf;
-
-    //interrupt of rising edge
-    io_conf.intr_type = GPIO_PIN_INTR_NEGEDGE;
-    //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = 1ULL<<GPIO_INPUT_IO_0;
-    //set as input mode
-    io_conf.mode = GPIO_MODE_INPUT;
-    //enable pull-up mode
-    io_conf.pull_up_en = 1;
-    io_conf.pull_down_en = 0;
-    gpio_config(&io_conf);
-
-    //change gpio intrrupt type for one pin
     gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_NEGEDGE);
-
-    //create a queue to handle gpio event from isr
-    //gpio_evt_queue = xQueueCreate(1, sizeof(uint32_t));
     xSemaphore = xSemaphoreCreateBinary();
-    //install gpio isr service
-     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
-     //hook isr handler for specific gpio pin
-     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
-     //remove isr handler for gpio number.
-     gpio_isr_handler_remove(GPIO_INPUT_IO_0);
-     //hook isr handler for specific gpio pin again
-     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
-	int t = 0;
-	//uint32_t io_num;
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+    gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
+	uint8_t ticksTorestart = 0;
 	ESP_LOGI(TAG, "FORMAT FACTORY TASK");
-
 	while(xSemaphoreTake( xSemaphore, portMAX_DELAY) == pdTRUE){//xxx
 		while(gpio_get_level(GPIO_INPUT_IO_0)==0){
 			vTaskDelay(10/portTICK_RATE_MS);
-			t++;
-			if (t == 500){
-				printf("Format factory\n");
+			ticksTorestart++;
+			if (ticksTorestart == 5){
 				vConfigFormatFactory();
 				vTaskDelay(1000/portTICK_RATE_MS);
-			    printf("Restarting \n");
+			    ESP_LOGE(TAG,"Restarting \n");
 			    fflush(stdout);
 			    esp_restart();
-				break;
 			}
+			vTaskDelay(1000/portTICK_RATE_MS);
 		}
-		t = 0;
+		ticksTorestart = 0;
         vTaskDelay(1000/portTICK_RATE_MS);
 	}
 }
