@@ -64,6 +64,7 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "led.h"
 #include "espdefine.h"
 #include "driver/gpio.h"
+#include "uart_func.h"
 
 
 
@@ -443,47 +444,7 @@ uint16_t uComGetTransData(int slave){
 void UARTinit(int BTid) {
 	uart_driver_delete(UART_NUM_1);
 	int uart_baudarate = 115200;
-	switch(BTid) {
-		case 0:
-			uart_baudarate = 300;
-		break;
-		case 1:
-			uart_baudarate = 600;
-			break;
-		case 2:
-			uart_baudarate = 1200;
-			break;
-		case 3:
-			uart_baudarate = 2400;
-			break;
-		case 4:
-			uart_baudarate = 4800;
-			break;
-		case 5:
-			uart_baudarate = 9600;
-			break;
-		case 6:
-			uart_baudarate = 14400;
-			break;
-		case 7:
-			uart_baudarate = 19200;
-			break;
-		case 8:
-			uart_baudarate = 38400;
-			break;
-		case 9:
-			uart_baudarate = 56000;
-			break;
-		case 10:
-			uart_baudarate = 115200;
-			break;
-		case 11:
-			uart_baudarate = 128000;
-			break;
-		case 12:
-			uart_baudarate = 256000;
-			break;
-	}
+	uart_baudarate = UARTBaudaRate(BTid);//xxx
 	ESP_LOGI(TAG, "El baudarate is %d",uart_baudarate );
     const uart_config_t uart_config = {
         .baud_rate = uart_baudarate,
@@ -637,7 +598,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
 	}
 }
-static void rpeer_espnow_task(void *pvParameter)
+static void espnow_manage_task(void *pvParameter)
 {
     espnow_event_t evt;
     uint8_t recv_state = 0;
@@ -755,8 +716,9 @@ static void rpeer_espnow_task(void *pvParameter)
                         send_param->unicast = true;
                         send_param->broadcast = false;
                        }
-                        memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
-
+                        memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);//xxx save flash
+                        vConfigSetNVS(PeerTable, "PeerTable");
+                        vConfigGetNVS(PeerTable, "PeerTable");//xxx
                 		memcpy(mac,PeerTable + (buf->Nodeid)*(ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
                         ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d is the position %d", MAC2STR(mac),buf->Nodeid, (buf->Nodeid)*(ESP_NOW_ETH_ALEN));
                     }
@@ -883,7 +845,7 @@ static esp_err_t espnow_init(void)
     memcpy(send_param->dest_mac, broadcast_mac, ESP_NOW_ETH_ALEN);
     espnow_data_prepare(send_param);
     vEspnowGetOldPeers();
-    xTaskCreate(rpeer_espnow_task, "register_peer", 2048*4, send_param, 4, NULL);
+    xTaskCreate(espnow_manage_task, "espnow_manage_task", 2048*4, send_param, 4, NULL);
     return ESP_OK;
 }
 
@@ -904,12 +866,10 @@ static void rx_task(void *arg){
     esp_uart_data_t U_data;
     espnow_event_t evt;
     for(;;) {
-        //Waiting for UART event.
         if(xQueueReceive(uart1_queue, (void * )&event, (portTickType)portMAX_DELAY)) {
             bzero(dtmp, RX_BUF_SIZE);
             ESP_LOGI(RX_TASK_TAG, "uart[%d] event:", UART_NUM_1);
             switch(event.type) {
-                //Event of UART receving data
                 case UART_DATA:
                     uart_read_bytes(UART_NUM_1, dtmp, event.size, portMAX_DELAY);
                     uint8_t info = uComDirection(&dtmp[0]);
@@ -918,8 +878,6 @@ static void rx_task(void *arg){
                     ESP_LOGI(RX_TASK_TAG,"Data recivida\n");
                     switch(info){
                     case EX_SLAVE:
-                    	// Query of response BACK
-                        ESP_LOGI(RX_TASK_TAG,"Sending to new queue");
                     	evt.id = ESPNOW_SEND_CB;
                     	evt.info.send_t.id = ESPNOW_TO_SEND;
                     	evt.info.send_t.info.send_data = U_data;
@@ -935,36 +893,25 @@ static void rx_task(void *arg){
                     xQueueReset(uart1_queue);
                     vNotiUart();
                     break;
-                //Event of HW FIFO overflow detected
                 case UART_FIFO_OVF:
                     ESP_LOGI(RX_TASK_TAG, "hw fifo overflow");
-                    // If fifo overflow happened, you should consider adding flow control for your application.
-                    // The ISR has already reset the rx FIFO,
-                    // As an example, we directly flush the rx buffer here in order to read more data.
                     uart_flush_input(UART_NUM_1);
                     xQueueReset(uart1_queue);
                     break;
-                //Event of UART ring buffer full
                 case UART_BUFFER_FULL:
                     ESP_LOGI(RX_TASK_TAG, "ring buffer full");
-                    // If buffer full happened, you should consider encreasing your buffer size
-                    // As an example, we directly flush the rx buffer here in order to read more data.
                     uart_flush_input(UART_NUM_1);
                     xQueueReset(uart1_queue);
                     break;
-                //Event of UART RX break detected
                 case UART_BREAK:
                     ESP_LOGI(RX_TASK_TAG, "uart rx break");
                     break;
-                //Event of UART parity check error
                 case UART_PARITY_ERR:
                     ESP_LOGI(RX_TASK_TAG, "uart parity error");
                     break;
-                //Event of UART frame error
                 case UART_FRAME_ERR:
                     ESP_LOGI(RX_TASK_TAG, "uart frame error");
                     break;
-                //Others
                 default:
                     ESP_LOGI(RX_TASK_TAG, "uart event type: %d", event.type);
                     break;
@@ -1076,7 +1023,6 @@ void FormatFactory(void *arg){
 
 void app_main()
 {
-    // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK( nvs_flash_erase() );
@@ -1084,7 +1030,7 @@ void app_main()
     }
    // nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
-    //esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
     vConfigLoad();
    // Create UART tasks
     xTaskCreatePinnedToCore(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL,1);
