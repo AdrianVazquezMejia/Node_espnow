@@ -518,10 +518,11 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			case SAVE_RAM:
 				 if (HoldingRegister[BaudaRate] != HoldingRAM[BaudaRate]){
 						vTaskDelay(500);
-						UARTinit(HoldingRegister[BaudaRate]);
+						UARTinit(HoldingRAM[BaudaRate]);
 				 }
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
-				 memcpy(RoutingTable,HoldingRAM+ offset,ROUTING_TABLE_SIZE);
+				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE);
+				 ESP_LOGI(TAG,"Saved in RAM");
 				 if (dir == ESP_NOW){
 					 data.dir = BACKWARD;
 					 xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
@@ -534,6 +535,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				 memcpy(RoutingTable,HoldingRAM+ offset,ROUTING_TABLE_SIZE);
 				 vConfigSetNVS(RoutingTable,"RoutingTable");
 				 vConfigSetNVS(HoldingRegister,"HoldingRegister");
+				 ESP_LOGI(TAG,"Saved in FLASH");
 				 if (dir == ESP_NOW){
 					data.dir = BACKWARD;
 					xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
@@ -553,7 +555,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			while( i < data_limit){// xxx cambiar por un for
 				data.data[inc] = 0;
 				inc++;
-				data.data[inc] =HoldingRegister[Address.Val+i];
+				data.data[inc] =HoldingRAM[Address.Val+i];
 				inc++;
 				i++;
 			}
@@ -662,7 +664,7 @@ static void espnow_manage_task(void *pvParameter)
                 	case ESPNOW_TO_SEND:
                 	{
                 		tries = 0;
-                		ESP_LOGI(TAG,"Envando a la cola de enviar");
+                		ESP_LOGI(TAG,"Enviando a la cola de enviar");
                 		espnow_send_data_t *espnow_data = &evt.info.send_t.info;
                 		U_data = espnow_data->send_data;
                 		xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
@@ -974,6 +976,7 @@ void vConfigLoad(){
 
 	        Node_ID = HoldingRegister[NodeID];
 	        BaudaRateID = HoldingRegister[BaudaRate];
+	        memcpy(HoldingRAM,HoldingRegister,HOLDING_REGISTER_SIZE);
 	    }
 }
 
