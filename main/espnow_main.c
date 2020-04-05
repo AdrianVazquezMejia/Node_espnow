@@ -117,11 +117,10 @@ static SemaphoreHandle_t xSemaphore = NULL;
  nvs_handle nvshandle;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
+static uint16_t s_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 
 static void espnow_deinit(espnow_send_param_t *send_param);
-static uint8_t Peer[6][6];
 static uint8_t RoutingTable[ROUTING_TABLE_SIZE];
 static uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
 static uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];
@@ -265,13 +264,8 @@ void vConfigSetNVS(uint8_t *Array , const char *Name){
     }
 
     err = nvs_commit(nvshandle);
-    // Close
     nvs_close(nvshandle);
 }
-
-/* ESPNOW sending or receiving callback function is called in WiFi task.
- * Users should not do lengthy operations from this task. Instead, post
- * necessary data to a queue and handle it from a lower priority task. */
 static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
     espnow_event_t evt;
@@ -299,7 +293,6 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
         ESP_LOGE(TAG, "Receive cb arg error");
         return;
     }
-
     evt.id = ESPNOW_RECV_CB;
     memcpy(recv_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
     recv_cb->data = malloc(len);
@@ -307,7 +300,6 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
         ESP_LOGE(TAG, "Malloc receive data fail");
         return;
     }
-
     memcpy(recv_cb->data, data, len);
     recv_cb->data_len = len;
     if (xQueueSend(espnow_queue, &evt, portMAX_DELAY) != pdTRUE) {
@@ -317,7 +309,7 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
 }
 
 /* Parse received ESPNOW data. */
-int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, int *dir)
+int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, uint8_t *dir)
 {
     espnow_data_t *buf = (espnow_data_t *)data;
     uint16_t crc, crc_cal = 0;
@@ -326,18 +318,15 @@ int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t
         ESP_LOGE(TAG, "Receive ESPNOW data too short, len:%d", data_len);
         return -1;
     }
-
     *state = buf->state;
     *seq = buf->seq_num;
     *dir = buf->dir;
     crc = buf->crc;
     buf->crc = 0;
     crc_cal = crc16_le(UINT16_MAX, (uint8_t const *)buf,data_len);
-
     if (crc_cal == crc) {
         return buf->type;
     }
-
     return -1;
 }
 
@@ -350,7 +339,7 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
     buf->Nodeid = HoldingRegister[NodeID];
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
     buf->state = send_param->state;
-    buf->seq_num = s_example_espnow_seq[buf->type]++;
+    buf->seq_num = s_espnow_seq[buf->type]++;
     buf->crc = 0;
     buf->dir = send_param->dir;
     buf->crc = crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
@@ -599,8 +588,8 @@ static void espnow_manage_task(void *pvParameter)
 {
     espnow_event_t evt;
     uint8_t recv_state = 0;
+    uint8_t dir = 0;
     uint16_t recv_seq = 0;
-    int recv_magic = 0;
     int ret;
     int Peer_Quantity = 0;
     int count=10;
@@ -673,7 +662,7 @@ static void espnow_manage_task(void *pvParameter)
             {
                 espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
                 /*Verify is broadcast*/
-                ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
+                ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq , &dir);
                 espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
 
 
@@ -696,9 +685,7 @@ static void espnow_manage_task(void *pvParameter)
                         memcpy(peer->peer_addr, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
                         ESP_ERROR_CHECK( esp_now_add_peer(peer) );
                         Peer_Quantity++;
-
-                        memcpy(Peer[ Peer_Quantity ], recv_cb->mac_addr, ESP_NOW_ETH_ALEN);// xxx peer delete
-                        ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(Peer[1]));
+                        ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(recv_cb->mac_addr));
                         free(peer);
                         /* Send the response to the new peer, for register myself with it*/
 
@@ -709,13 +696,11 @@ static void espnow_manage_task(void *pvParameter)
                             ESP_LOGE(TAG, "Send error");
                             espnow_deinit(send_param);
                             vTaskDelete(NULL);
-
                         send_param->unicast = true;
                         send_param->broadcast = false;
                        }
-                        memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);//xxx save flash
+                        memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
                         vConfigSetNVS(PeerTable, "PeerTable");
-                        vConfigGetNVS(PeerTable, "PeerTable");//xxx
                 		memcpy(mac,PeerTable + (buf->Nodeid)*(ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
                         ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d is the position %d", MAC2STR(mac),buf->Nodeid, (buf->Nodeid)*(ESP_NOW_ETH_ALEN));
                     }
@@ -726,13 +711,13 @@ static void espnow_manage_task(void *pvParameter)
 					U_data.len = buf->data_len;
             		uint8_t slave = U_data.data[0];
             		vNotiUart();
-                	if (buf->dir == FORDWARD){
+                	if (dir == FORDWARD){
                     RoutingTable[slave+OFFSET] = buf->Nodeid;
                     RoutingTable[buf->Nodeid] = buf->Nodeid;
             		ESP_LOGI(TAG, "BackMAC  data from: "MACSTR",  of slave %d ", MAC2STR(recv_cb->mac_addr),slave);
                     }
 					uint8_t mode = uComGetTransData(slave);
-					switch(buf->dir){
+					switch(dir){
 						case FORDWARD:
 							switch(mode){
 							case SERIAL:
@@ -745,8 +730,8 @@ static void espnow_manage_task(void *pvParameter)
 								vConfigSetNode(U_data,ESP_NOW);
 								break;
 							case JUMP:
-								U_data.dir = buf ->dir;
-								ESP_LOGI(TAG,"JUMP DIR %d: ", buf ->dir );
+								U_data.dir = dir;
+								ESP_LOGI(TAG,"JUMP DIR %d: ", dir );
 								xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
 							}
 							break;
@@ -758,8 +743,8 @@ static void espnow_manage_task(void *pvParameter)
 									ESP_LOGI(TAG,"SERIAL response");
 								}
 								else {
-									U_data.dir = buf ->dir;
-									ESP_LOGI(TAG,"JUMP BACK %d: ", buf ->dir );
+									U_data.dir = dir;
+									ESP_LOGI(TAG,"JUMP BACK %d: ", dir );
 									xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
 								};
 					}
@@ -872,7 +857,7 @@ static void rx_task(void *arg){
                     uint8_t info = uComDirection(&dtmp[0]);
                     U_data.data = dtmp;
                     U_data.len = (uint8_t) event.size;
-                    ESP_LOGI(RX_TASK_TAG,"Data recivida\n");
+                    ESP_LOGI(RX_TASK_TAG,"Data recivida id %x \n",dtmp[0]);
                     switch(info){
                     case EX_SLAVE:
                     	evt.id = ESPNOW_SEND_CB;
