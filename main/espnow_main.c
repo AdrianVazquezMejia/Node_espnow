@@ -94,8 +94,8 @@ static const int TX_BUF_SIZE = 1024;
 #define OFFSET	256
 
 
-#define GPIO_INPUT_IO_0     0 //xxx
-#define GPIO_OUTPUT_IO_19	2//19
+#define GPIO_INPUT_IO_0     0
+#define GPIO_OUTPUT_IO_19	2//xxx 19
 #define ESP_INTR_FLAG_DEFAULT 0
 
 static const char *TAG = "espnow";
@@ -122,8 +122,6 @@ static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 static void espnow_deinit(espnow_send_param_t *send_param);
 static uint8_t Peer[6][6];
-static uint8_t Node_ID;
-static uint8_t BaudaRateID;
 static uint8_t RoutingTable[ROUTING_TABLE_SIZE];
 static uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
 static uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];
@@ -444,7 +442,7 @@ uint16_t uComGetTransData(int slave){
 void UARTinit(int BTid) {
 	uart_driver_delete(UART_NUM_1);
 	int uart_baudarate = 115200;
-	uart_baudarate = UARTBaudaRate(BTid);//xxx
+	uart_baudarate = UARTBaudaRate(BTid);
 	ESP_LOGI(TAG, "El baudarate is %d",uart_baudarate );
     const uart_config_t uart_config = {
         .baud_rate = uart_baudarate,
@@ -548,7 +546,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 
 		case READ_HOLDING:
 			ESP_LOGI(TAG,"Reading HoldingRegister\n");
-			data.data[2] = data.data[5]*2;//xxx what if greater than 125 number of bytes
+			data.data[2] = data.data[5]*2;
 			uint8_t inc =3;
 			uint8_t data_limit = data.data[5];
 			for(uint16_t i = 0; i < data_limit;i++){
@@ -558,8 +556,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				inc++;
 			}
 			CRC.Val = CRC16(data.data,inc);
-			data.data[inc] = CRC.byte.LB;
-			inc++;//xxx incrustar en la linea de arriba
+			data.data[inc++] = CRC.byte.LB;
 			data.data[inc] = CRC.byte.HB;
 			data.len= ++inc;
 			if (dir == ESP_NOW){
@@ -858,7 +855,7 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 }
 
 static void rx_task(void *arg){
-    UARTinit(BaudaRateID);
+    UARTinit(HoldingRegister[BaudaRate]);
     uart_event_t event;
     uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
     static const char *RX_TASK_TAG = "RX_TASK";
@@ -884,7 +881,6 @@ static void rx_task(void *arg){
                     	xQueueSend(espnow_queue,&evt,(portTickType)portMAX_DELAY);
 						break;
                     case NODE:
-                    	// TO ME
                     	ESP_LOGI(RX_TASK_TAG,"Node");
                     	vConfigSetNode(U_data,UART);
                     	break;
@@ -924,59 +920,15 @@ static void rx_task(void *arg){
 }
 
 void vConfigLoad(){
-    esp_err_t err = nvs_flash_init();
-	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
-	    if (err != ESP_OK) {
-	        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-	    } else {
-	        printf("Reading Config from NVS ...\n ");
-	        size_t size_data = sizeof(HoldingRegister);
-	        size_t size_RT = sizeof(RoutingTable);
-	        size_t size_Peer = sizeof(PeerTable);
-	        HoldingRegister[NodeID]= DEFAULT_ID;
-	        HoldingRegister[BaudaRate]= DEFAULT_BR;
-	        err = nvs_get_blob(nvshandle, "HoldingRegister", HoldingRegister, &size_data);
-	        switch (err) {
-	            case ESP_OK:
-	                printf("Config Holding Register loaded: %d BR and ID %d\n",HoldingRegister[BaudaRate],HoldingRegister[NodeID] );
-	                break;
-	            case ESP_ERR_NVS_NOT_FOUND:
-	                printf("The value is not initialized yet!\n");
-	                break;
-	            default :
-	                printf("Error (%s) reading!\n", esp_err_to_name(err));
-	        }
-	        err = nvs_get_blob(nvshandle, "RoutingTable",RoutingTable, &size_RT);
-	        switch (err) {
-	            case ESP_OK:
-	                printf("Config RoutingTable loaded\n");
-	                break;
-	            case ESP_ERR_NVS_NOT_FOUND:
-	                printf("The RT is not initialized yet!\n");
-	                break;
-	            default :
-	                printf("Error (%s) reading!\n", esp_err_to_name(err));
-	        }
-
-	        err = nvs_get_blob(nvshandle, "PeerTable",PeerTable, &size_Peer);
-	        switch (err) {
-	            case ESP_OK:
-	                printf("Config Peer Table loaded\n");
-	                break;
-	            case ESP_ERR_NVS_NOT_FOUND:
-	                printf("The Peer Table is not initialized yet!\n");
-	                break;
-	            default :
-	                printf("Error (%s) reading!\n", esp_err_to_name(err));
-	        }
-	        printf((err != ESP_OK) ? "Failed!\n" : "Config Done\n");
-	        nvs_close(nvshandle);
-
-	        Node_ID = HoldingRegister[NodeID];
-	        BaudaRateID = HoldingRegister[BaudaRate];
-	        memcpy(HoldingRAM,HoldingRegister,HOLDING_REGISTER_SIZE);
-	    }
+	HoldingRegister[NodeID]= DEFAULT_ID;
+	HoldingRegister[BaudaRate]= DEFAULT_BR;
+	vConfigGetNVS(HoldingRegister,"HoldingRegister");
+	vConfigGetNVS(RoutingTable,"RoutingTable");
+	vConfigGetNVS(PeerTable,"PeerTable");
+	memcpy(HoldingRAM,HoldingRegister,HOLDING_REGISTER_SIZE);
+	ESP_LOGE(TAG,"Configuracion Cargada: BaudaRate ID (%d) y MODBUS ID (%d)",HoldingRegister[BaudaRate],HoldingRegister[NodeID]);
 }
+
 
 void vConfigFormatFactory( void ){
 
@@ -999,25 +951,25 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 
 void FormatFactory(void *arg){
     gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_NEGEDGE);
-    xSemaphore = xSemaphoreCreateBinary();
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
-	uint8_t ticksTorestart = 0;
-	ESP_LOGI(TAG, "FORMAT FACTORY TASK");
-	while(xSemaphoreTake( xSemaphore, portMAX_DELAY) == pdTRUE){//xxx
+	uint8_t ticksTorestart = 5;
+    xSemaphore = xSemaphoreCreateBinary();
+	ESP_LOGI(TAG, "FORMAT FACTORY TASK CREATED");
+	while(xSemaphoreTake( xSemaphore, portMAX_DELAY) == pdTRUE){
 		while(gpio_get_level(GPIO_INPUT_IO_0)==0){
-			vTaskDelay(10/portTICK_RATE_MS);
-			ticksTorestart++;
-			if (ticksTorestart == 5){
+			ESP_LOGI(TAG, "Restarting in %d segundos", ticksTorestart);
+			vTaskDelay(1000/portTICK_RATE_MS);
+			ticksTorestart--;
+			if (ticksTorestart == 0){
 				vConfigFormatFactory();
 				vTaskDelay(1000/portTICK_RATE_MS);
 			    ESP_LOGE(TAG,"Restarting \n");
 			    fflush(stdout);
 			    esp_restart();
 			}
-			vTaskDelay(1000/portTICK_RATE_MS);
 		}
-		ticksTorestart = 0;
+		ticksTorestart = 5;
         vTaskDelay(1000/portTICK_RATE_MS);
 	}
 }
