@@ -551,13 +551,11 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			data.data[2] = data.data[5]*2;//xxx what if greater than 125 number of bytes
 			uint8_t inc =3;
 			uint8_t data_limit = data.data[5];
-			int i = 0;
-			while( i < data_limit){// xxx cambiar por un for
+			for(uint16_t i = 0; i < data_limit;i++){
 				data.data[inc] = 0;
 				inc++;
 				data.data[inc] =HoldingRAM[Address.Val+i];
 				inc++;
-				i++;
 			}
 			CRC.Val = CRC16(data.data,inc);
 			data.data[inc] = CRC.byte.LB;
