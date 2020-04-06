@@ -73,10 +73,10 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 static const int RX_BUF_SIZE = 1024;
 static const int TX_BUF_SIZE = 1024;
 
-#define ROUTING_TABLE_SIZE 512
+#define ROUTING_TABLE_SIZE 512 // xx should be 256
 #define PEER_TABLE_SIZE 256
 #define HOLDING_REGISTER_SIZE 513
-
+#define LIMIT_NODE_SLAVE 100
 #define TXD_PIN 25//(GPIO_NUM_33)
 #define RXD_PIN 14//14//(GPIO_NUM_26)
 
@@ -92,7 +92,6 @@ static const int TX_BUF_SIZE = 1024;
 #define DEFAULT_BR 10 //115200
 
 #define OFFSET	256
-
 
 #define GPIO_INPUT_IO_0     0
 #define GPIO_OUTPUT_IO_19	2//xxx 19
@@ -471,11 +470,12 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		vNotiUart();
 		switch(function){
 		case WRITE_HOLDING_REGISTER:
-			if (Address.Val == 0 && Value.Val <=100){
+			if (Address.Val == 0 && Value.Val <= LIMIT_NODE_SLAVE){
 				ESP_LOGI(TAG,"Node Id not allowed, must be greater than 100\n");
 				break;
 			}
-
+			if (Address.Val > offset)
+				HoldingRAM[Value.Val+offset] = Value.Val;
 			HoldingRAM[Address.Val] = Value.Val;
 			ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRAM[Address.Val],Address.Val);
 			if (dir == ESP_NOW){
@@ -519,7 +519,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				 break;
 			case SAVE_FLASH:
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
-				 memcpy(RoutingTable,HoldingRAM+ offset,ROUTING_TABLE_SIZE);
+				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE);
 				 vConfigSetNVS(RoutingTable,"RoutingTable");
 				 vConfigSetNVS(HoldingRegister,"HoldingRegister");
 				 ESP_LOGI(TAG,"Saved in FLASH");
@@ -670,7 +670,7 @@ static void espnow_manage_task(void *pvParameter)
                     ESP_LOGI(TAG, "Receive %dth broadcast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 
                     /* If MAC address does not exist in peer list, add it to peer list. */
-                    if (esp_now_is_peer_exist(recv_cb->mac_addr) == false) {
+                    if ((esp_now_is_peer_exist(recv_cb->mac_addr) == false)&&(RoutingTable[buf->Nodeid]!=0)) {//xxx about to test
                         esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
                         if (peer == NULL) {
                             ESP_LOGE(TAG, "Malloc peer information fail");
@@ -712,7 +712,7 @@ static void espnow_manage_task(void *pvParameter)
             		uint8_t slave = U_data.data[0];
             		vNotiUart();
                 	if (dir == FORDWARD){
-                    RoutingTable[slave+OFFSET] = buf->Nodeid;
+                    RoutingTable[slave+LIMIT_NODE_SLAVE] = buf->Nodeid;
                     RoutingTable[buf->Nodeid] = buf->Nodeid;
             		ESP_LOGI(TAG, "BackMAC  data from: "MACSTR",  of slave %d ", MAC2STR(recv_cb->mac_addr),slave);
                     }
@@ -732,7 +732,7 @@ static void espnow_manage_task(void *pvParameter)
 							case JUMP:
 								U_data.dir = dir;
 								ESP_LOGI(TAG,"JUMP DIR %d: ", dir );
-								xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
+								xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);//xxx
 							}
 							break;
 							case BACKWARD:
@@ -745,7 +745,7 @@ static void espnow_manage_task(void *pvParameter)
 								else {
 									U_data.dir = dir;
 									ESP_LOGI(TAG,"JUMP BACK %d: ", dir );
-									xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
+									xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);//xxx
 								};
 					}
 
