@@ -509,28 +509,26 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				 }
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
 				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE);
-				 ESP_LOGI(TAG,"Saved in RAM");
-				 if (dir == ESP_NOW){
-					 data.dir = BACKWARD;
-					 xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
-				 }
-				 else
-					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+				 ESP_LOGI(TAG,"Saved in RAM..................................\n");
 				 break;
 			case SAVE_FLASH:
+				 if (HoldingRegister[BaudaRate] != HoldingRAM[BaudaRate]){
+						vTaskDelay(500);
+						UARTinit(HoldingRAM[BaudaRate]);
+				 }
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
 				 memcpy(RoutingTable,HoldingRAM+ offset,ROUTING_TABLE_SIZE);
 				 vConfigSetNVS(RoutingTable,"RoutingTable");
 				 vConfigSetNVS(HoldingRegister,"HoldingRegister");
-				 ESP_LOGI(TAG,"Saved in FLASH");
-				 if (dir == ESP_NOW){
-					data.dir = BACKWARD;
-					xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
-				 }
-				 else
-					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+				 ESP_LOGI(TAG,"Saved in FLASH..................................\n");
 				 break;
 			}
+			 if (dir == ESP_NOW){
+				data.dir = BACKWARD;
+				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+			 }
+			 else
+				 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 			break;
 
 		case READ_HOLDING:
