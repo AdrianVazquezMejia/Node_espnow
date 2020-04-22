@@ -64,7 +64,8 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "led.h"
 #include "espdefine.h"
 #include "driver/gpio.h"
-//#include "format_factory.h"
+#include "uart_func.h"
+
 
 
 
@@ -72,7 +73,10 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 static const int RX_BUF_SIZE = 1024;
 static const int TX_BUF_SIZE = 1024;
 
-
+#define ROUTING_TABLE_SIZE 512 // xx should be 256
+#define PEER_TABLE_SIZE 256
+#define HOLDING_REGISTER_SIZE 513
+#define LIMIT_NODE_SLAVE 100
 #define TXD_PIN 25//(GPIO_NUM_33)
 #define RXD_PIN 14//14//(GPIO_NUM_26)
 
@@ -86,14 +90,11 @@ static const int TX_BUF_SIZE = 1024;
 #define DEFAULT_ID 255
 #define BaudaRate 1
 #define DEFAULT_BR 10 //115200
-#define ROUTING_TABLE_SIZE 512
-#define PEER_TABLE_SIZE 256
-#define HOLDING_REGISTER_SIZE 513
+
 #define OFFSET	256
 
-
-#define GPIO_INPUT_IO_0     0 //xxx
-#define GPIO_OUTPUT_IO_19	2//19
+#define GPIO_INPUT_IO_0     0
+#define GPIO_OUTPUT_IO_19	2//xxx 19
 #define ESP_INTR_FLAG_DEFAULT 0
 
 static const char *TAG = "espnow";
@@ -115,13 +116,15 @@ static SemaphoreHandle_t xSemaphore = NULL;
  nvs_handle nvshandle;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
+static uint16_t s_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
+
 
 static void espnow_deinit(espnow_send_param_t *send_param);
-static uint8_t Peer[6][6];
-static uint8_t Node_ID;
-static uint8_t BaudaRateID;
-static esp_err_t example_event_handler(void *ctx, system_event_t *event)
+static uint8_t RoutingTable[ROUTING_TABLE_SIZE];
+static uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
+static uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];
+static uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN];
+static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 {
     switch(event->event_id) {
     case SYSTEM_EVENT_STA_START:
@@ -137,7 +140,7 @@ static esp_err_t example_event_handler(void *ctx, system_event_t *event)
 static void wifi_init(void)
 {
     tcpip_adapter_init();
-    ESP_ERROR_CHECK( esp_event_loop_init(example_event_handler, NULL) );
+    ESP_ERROR_CHECK( esp_event_loop_init(wifi_event_handler, NULL) );
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK( esp_wifi_init(&cfg) );
     ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
@@ -260,23 +263,19 @@ void vConfigSetNVS(uint8_t *Array , const char *Name){
     }
 
     err = nvs_commit(nvshandle);
-    // Close
     nvs_close(nvshandle);
 }
-
-/* ESPNOW sending or receiving callback function is called in WiFi task.
- * Users should not do lengthy operations from this task. Instead, post
- * necessary data to a queue and handle it from a lower priority task. */
 static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
     espnow_event_t evt;
-    espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
+    espnow_event_send_cb_t *send_cb = &evt.info.send_t.info.send_cb;
     if (mac_addr == NULL) {
         ESP_LOGE(TAG, "Send cb arg error");
         return;
     }
 
     evt.id = ESPNOW_SEND_CB;
+    evt.info.send_t.id = ESPNOW_FROM_CB;
     memcpy(send_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
     send_cb->status = status;
     if (xQueueSend(espnow_queue, &evt, portMAX_DELAY) != pdTRUE) {
@@ -293,7 +292,6 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
         ESP_LOGE(TAG, "Receive cb arg error");
         return;
     }
-
     evt.id = ESPNOW_RECV_CB;
     memcpy(recv_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
     recv_cb->data = malloc(len);
@@ -301,7 +299,6 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
         ESP_LOGE(TAG, "Malloc receive data fail");
         return;
     }
-
     memcpy(recv_cb->data, data, len);
     recv_cb->data_len = len;
     if (xQueueSend(espnow_queue, &evt, portMAX_DELAY) != pdTRUE) {
@@ -311,7 +308,7 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
 }
 
 /* Parse received ESPNOW data. */
-int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, int *dir)
+int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, uint8_t *dir)
 {
     espnow_data_t *buf = (espnow_data_t *)data;
     uint16_t crc, crc_cal = 0;
@@ -320,18 +317,15 @@ int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t
         ESP_LOGE(TAG, "Receive ESPNOW data too short, len:%d", data_len);
         return -1;
     }
-
     *state = buf->state;
     *seq = buf->seq_num;
     *dir = buf->dir;
     crc = buf->crc;
     buf->crc = 0;
     crc_cal = crc16_le(UINT16_MAX, (uint8_t const *)buf,data_len);
-
     if (crc_cal == crc) {
         return buf->type;
     }
-
     return -1;
 }
 
@@ -341,12 +335,10 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 {
     espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
     assert(send_param->len >= sizeof(espnow_data_t));
-    uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-    vConfigGetNVS(HoldingRegister,"HoldingRegister");
     buf->Nodeid = HoldingRegister[NodeID];
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
     buf->state = send_param->state;
-    buf->seq_num = s_example_espnow_seq[buf->type]++;
+    buf->seq_num = s_espnow_seq[buf->type]++;
     buf->crc = 0;
     buf->dir = send_param->dir;
     buf->crc = crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
@@ -372,14 +364,10 @@ void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 }
 
 void vEspnowGetOldPeers(void){
-	ESP_LOGI(TAG, "Registering");
-	uint8_t PeerTable[(PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN)] = {0};
-	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
+	ESP_LOGI(TAG, "Registering Old Peers");
 	uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
-	vConfigGetNVS(PeerTable,"PeerTable");
-	vConfigGetNVS(RoutingTable,"RoutingTable");
 	for (uint16_t j = 0 ; j <=255 ; j++){
-		memcpy(mac,PeerTable + (RoutingTable[j]* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);//xxx
+		memcpy(mac,PeerTable + (RoutingTable[j]* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
 		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + RoutingTable[j]* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0){
 			RegisterPeer(mac);
 			ESP_LOGI(TAG, "Node %d of position %d added",RoutingTable[j],j );
@@ -394,27 +382,21 @@ void espnow_send(void *pvParameter){
     send_param->unicast = true;
     send_param->broadcast = false;
     send_param->state = 0;
-	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
-	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-	uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
 	uint8_t des_node = 0;
 	uint16_t posicion = 0;
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	ESP_LOGI(TAG,"Send Function Activated");
-    	vConfigGetNVS(RoutingTable,"RoutingTable");
-    	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-	   	vConfigGetNVS(PeerTable,"PeerTable");
     	des_node = RoutingTable[U_data.data[0]];
     	send_param->dir  = FORDWARD;
     	if ((des_node == HoldingRegister[NodeID])||(U_data.dir == BACKWARD)){
         	des_node = RoutingTable[OFFSET+U_data.data[0]];
-    		memcpy(send_param->dest_mac,PeerTable+(ESP_NOW_ETH_ALEN * des_node),ESP_NOW_ETH_ALEN);// supose backmac is correctly filled
+    		memcpy(send_param->dest_mac,PeerTable+(ESP_NOW_ETH_ALEN * des_node),ESP_NOW_ETH_ALEN);
     		ESP_LOGI(TAG,"ANSWERING TO MASTER  from node :%d, and slave: %d\n", RoutingTable[OFFSET+U_data.data[0]],U_data.data[0]);
     		send_param->dir = BACKWARD;
     	}
     	else {
     	   	posicion = ESP_NOW_ETH_ALEN * des_node;
-    		memcpy(send_param->dest_mac, PeerTable + posicion,ESP_NOW_ETH_ALEN); //xxx
+    		memcpy(send_param->dest_mac, PeerTable + posicion,ESP_NOW_ETH_ALEN);
     		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR(send_param->dest_mac));
     	}
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
@@ -432,10 +414,6 @@ void espnow_send(void *pvParameter){
 
 uint16_t uComGetTransData(int slave){
 
-    uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
-	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-    uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
-	vConfigGetNVS(RoutingTable,"RoutingTable");
 	uint8_t des_slave = RoutingTable[slave];
 	if (HoldingRegister[NodeID] == slave) {
 		return NODECONFIG;
@@ -452,47 +430,7 @@ uint16_t uComGetTransData(int slave){
 void UARTinit(int BTid) {
 	uart_driver_delete(UART_NUM_1);
 	int uart_baudarate = 115200;
-	switch(BTid) {
-		case 0:
-			uart_baudarate = 300;
-		break;
-		case 1:
-			uart_baudarate = 600;
-			break;
-		case 2:
-			uart_baudarate = 1200;
-			break;
-		case 3:
-			uart_baudarate = 2400;
-			break;
-		case 4:
-			uart_baudarate = 4800;
-			break;
-		case 5:
-			uart_baudarate = 9600;
-			break;
-		case 6:
-			uart_baudarate = 14400;
-			break;
-		case 7:
-			uart_baudarate = 19200;
-			break;
-		case 8:
-			uart_baudarate = 38400;
-			break;
-		case 9:
-			uart_baudarate = 56000;
-			break;
-		case 10:
-			uart_baudarate = 115200;
-			break;
-		case 11:
-			uart_baudarate = 128000;
-			break;
-		case 12:
-			uart_baudarate = 256000;
-			break;
-	}
+	uart_baudarate = UARTBaudaRate(BTid);
 	ESP_LOGI(TAG, "El baudarate is %d",uart_baudarate );
     const uart_config_t uart_config = {
         .baud_rate = uart_baudarate,
@@ -508,8 +446,6 @@ void UARTinit(int BTid) {
     }
 
 uint8_t uComDirection(uint8_t *Slave){
-uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-vConfigGetNVS(HoldingRegister , "HoldingRegister");
 	if (HoldingRegister[NodeID] == *Slave){
 		return NODE;
 		}
@@ -528,100 +464,110 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 	INT_VAL CRC;
 	Value.byte.HB = data.data[4];
 	Value.byte.LB = data.data[5];
-	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
-	uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
-	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-	vConfigGetNVS(RoutingTable,"RoutingTable");
 	uint16_t offset = 256;
 
 	if (CRC16(data.data,data.len) == 0){
-	switch(function){
-	case WRITE_HOLDING_REGISTER:
-		if (Address.Val == 0 && Value.Val <=100){
-			ESP_LOGI(TAG,"Node Id not allowed, must be greater than 100\n");
-			break;
-		}
-
-		HoldingRegister[Address.Val] = Value.Val;
-		vConfigSetNVS(HoldingRegister,"HoldingRegister");
-		if(Address.Val >=256){
-			RoutingTable[Address.Val-offset] = HoldingRegister[Address.Val];
-			vConfigSetNVS(RoutingTable,"RoutingTable");
-		}
-		ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRegister[Address.Val],Address.Val);
-		if (dir == ESP_NOW){
-			data.dir = BACKWARD;
-			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
-		}
-		else
-		uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 		vNotiUart();
-		if(Address.Val == BaudaRate){
-			vTaskDelay(500);
-			UARTinit(HoldingRegister[BaudaRate]);
-		}
-		break;
-
-	case WRITE_COIL:
-		if ((Address.Val == 0)&&(Value.Val ==0xFF00)){
-		    printf("Restarting \n");
-		    if (dir == ESP_NOW){
+		switch(function){
+		case WRITE_HOLDING_REGISTER:
+			if (Address.Val == 0 && Value.Val <= LIMIT_NODE_SLAVE){
+				ESP_LOGI(TAG,"Node Id not allowed, must be greater than 100\n");
+				break;
+			}
+			if (Address.Val > offset)
+				HoldingRAM[Value.Val+offset] = Value.Val;
+			HoldingRAM[Address.Val] = Value.Val;
+			ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRAM[Address.Val],Address.Val);
+			if (dir == ESP_NOW){
 				data.dir = BACKWARD;
 				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 			}
 			else
-		    uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
-			vNotiUart();
-			vTaskDelay(10);
-		    fflush(stdout);
-		    esp_restart();
+			uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 			break;
-		}
-		break;
 
-	case READ_HOLDING:
-		ESP_LOGI(TAG,"Reading HoldingRegister\n");
-		data.data[2] = data.data[5]*2;//xxx what if greater than ff number of bytes
-		uint8_t inc =3;
-		uint8_t data_limit = data.data[5];
-		int i = 0;
-		while( i < data_limit){
-			data.data[inc] = 0;
-			inc++;
-			data.data[inc] =HoldingRegister[Address.Val+i];
-			inc++;
-			i++;
-		}
-		CRC.Val = CRC16(data.data,inc);
-		data.data[inc] = CRC.byte.LB;
-		inc++;
-		data.data[inc] = CRC.byte.HB;
-		data.len= ++inc;
-		if (dir == ESP_NOW){
-			data.dir = BACKWARD;
-			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
-		}
-		else
-		uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
-		vNotiUart();
-		break;
-	default :
-		data.data[1]+= 0x80;
-		data.data[2] = 0x01;
-		CRC.Val = CRC16(data.data,3);
-		data.data[3] = CRC.byte.LB;
-		data.data[4] = CRC.byte.HB;
-		if (dir == ESP_NOW){
-			data.dir = BACKWARD;
-			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
-		}
-		else
-		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
-		vNotiUart();
-	}
+		case WRITE_COIL:
+			switch(Address.Val){
+			case RESTART:
+				if ((Address.Val == 0)&&(Value.Val ==0xFF00)){
+					printf("Restarting \n");
+					if (dir == ESP_NOW){
+						data.dir = BACKWARD;
+						xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+					}
+					else
+					uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+					vTaskDelay(10);
+					fflush(stdout);
+					esp_restart();
+				}
+				break;
+			case SAVE_RAM:
+				 if (HoldingRegister[BaudaRate] != HoldingRAM[BaudaRate]){
+						vTaskDelay(500);
+						UARTinit(HoldingRAM[BaudaRate]);
+				 }
+				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
+				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE);
+				 ESP_LOGI(TAG,"Saved in RAM");
+				 if (dir == ESP_NOW){
+					 data.dir = BACKWARD;
+					 xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+				 }
+				 else
+					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+				 break;
+			case SAVE_FLASH:
+				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
+				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE);
+				 vConfigSetNVS(RoutingTable,"RoutingTable");
+				 vConfigSetNVS(HoldingRegister,"HoldingRegister");
+				 ESP_LOGI(TAG,"Saved in FLASH");
+				 if (dir == ESP_NOW){
+					data.dir = BACKWARD;
+					xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+				 }
+				 else
+					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
+				 break;
+			}
+			break;
 
-
-
+		case READ_HOLDING:
+			ESP_LOGI(TAG,"Reading HoldingRegister\n");
+			data.data[2] = data.data[5]*2;
+			uint8_t inc =3;
+			uint8_t data_limit = data.data[5];
+			for(uint16_t i = 0; i < data_limit;i++){
+				data.data[inc] = 0;
+				inc++;
+				data.data[inc] =HoldingRAM[Address.Val+i];
+				inc++;
+			}
+			CRC.Val = CRC16(data.data,inc);
+			data.data[inc++] = CRC.byte.LB;
+			data.data[inc] = CRC.byte.HB;
+			data.len= ++inc;
+			if (dir == ESP_NOW){
+				data.dir = BACKWARD;
+				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+			}
+			else
+				uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
+			break;
+		default :
+			data.data[1]+= 0x80;
+			data.data[2] = 0x01;
+			CRC.Val = CRC16(data.data,3);
+			data.data[3] = CRC.byte.LB;
+			data.data[4] = CRC.byte.HB;
+			if (dir == ESP_NOW){
+				data.dir = BACKWARD;
+				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+			}
+			else
+				uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
+		}
 }
 	else {
 		ESP_LOGE(TAG_MB," CRC ERROR is %4x", CRC16(data.data,data.len));
@@ -635,28 +581,25 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 		}
 		else
-		uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
-		vNotiUart();
+			uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
 	}
 }
-static void rpeer_espnow_task(void *pvParameter)
+static void espnow_manage_task(void *pvParameter)
 {
     espnow_event_t evt;
     uint8_t recv_state = 0;
+    uint8_t dir = 0;
     uint16_t recv_seq = 0;
-    int recv_magic = 0;
     int ret;
     int Peer_Quantity = 0;
     int count=10;
+    uint8_t tries = 0;
     esp_uart_data_t U_data;
     vTaskDelay(5000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "Start sending broadcast data");
     uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
     /* Start sending broadcast ESPNOW data. */
-
     espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
-    uint8_t PeerTable[PEER_TABLE_SIZE * ESP_NOW_ETH_ALEN]= {0};
-	uint8_t RoutingTable[ROUTING_TABLE_SIZE] = {0};
     espnow_data_prepare(send_param);
     if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
         ESP_LOGE(TAG, "Send error");
@@ -668,33 +611,58 @@ static void rpeer_espnow_task(void *pvParameter)
         switch (evt.id) {
             case ESPNOW_SEND_CB:
             {
-                espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
-                ESP_LOGI(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
+                espnow_send_t *sendinf = &evt.info.send_t;
+                switch(sendinf->id){
+                	case ESPNOW_FROM_CB:
+                	{
+                        espnow_event_send_cb_t *send_cb = &evt.info.send_t.info.send_cb;
+						ESP_LOGI(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
+						if (memcmp(send_cb->mac_addr, broadcast_mac , ESP_NOW_ETH_ALEN) ==0){
+							if (count==0) {
+								break;
+							}
+							count--;
+							/*Delay before send the next data*/
+							if (send_param->delay > 0) {
+								vTaskDelay(send_param->delay/portTICK_RATE_MS);
+							}
 
-                if (count==0) {
-                    break;
-                }
-                count--;
-                /*Delay before send the next data*/
-                if (send_param->delay > 0) {
-                    vTaskDelay(send_param->delay/portTICK_RATE_MS);
+							espnow_data_prepare(send_param);
+							/* Send the next data after the previous data is sent. */
+							if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
+								ESP_LOGE(TAG, "Send error");
+								espnow_deinit(send_param);
+								vTaskDelete(NULL);
+							}
+							break;
+						}
+
+						else if ((send_cb->status == 0)||(tries==5))
+								break;
+							 else{
+								tries++;
+			                	xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
+							 }
+						break;
+                	}
+                	case ESPNOW_TO_SEND:
+                	{
+                		tries = 0;
+                		ESP_LOGI(TAG,"Enviando a la cola de enviar");
+                		espnow_send_data_t *espnow_data = &evt.info.send_t.info;
+                		U_data = espnow_data->send_data;
+                		xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
+                		break;
+                	}
                 }
 
-                espnow_data_prepare(send_param);
-                /* Send the next data after the previous data is sent. */
-                if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
-                    ESP_LOGE(TAG, "Send error");
-                    espnow_deinit(send_param);
-                    vTaskDelete(NULL);
-                }
-                /*Create the tasks for communication with UART*/
                 break;
             }
             case ESPNOW_RECV_CB:
             {
                 espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
                 /*Verify is broadcast*/
-                ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
+                ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq , &dir);
                 espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
 
 
@@ -702,14 +670,13 @@ static void rpeer_espnow_task(void *pvParameter)
                     ESP_LOGI(TAG, "Receive %dth broadcast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 
                     /* If MAC address does not exist in peer list, add it to peer list. */
-                    if (esp_now_is_peer_exist(recv_cb->mac_addr) == false) {
+                    if ((esp_now_is_peer_exist(recv_cb->mac_addr) == false)&&(RoutingTable[buf->Nodeid]!=0)) {//xxx about to test
                         esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
                         if (peer == NULL) {
                             ESP_LOGE(TAG, "Malloc peer information fail");
                             espnow_deinit(send_param);
                             vTaskDelete(NULL);
                         }
-                        vConfigGetNVS(PeerTable,"PeerTable");
                         memset(peer, 0, sizeof(esp_now_peer_info_t));
                         peer->channel = CONFIG_ESPNOW_CHANNEL;
                         peer->ifidx = ESPNOW_WIFI_IF;
@@ -718,9 +685,7 @@ static void rpeer_espnow_task(void *pvParameter)
                         memcpy(peer->peer_addr, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
                         ESP_ERROR_CHECK( esp_now_add_peer(peer) );
                         Peer_Quantity++;
-
-                        memcpy(Peer[ Peer_Quantity ], recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
-                        ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(Peer[1]));
+                        ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(recv_cb->mac_addr));
                         free(peer);
                         /* Send the response to the new peer, for register myself with it*/
 
@@ -731,12 +696,11 @@ static void rpeer_espnow_task(void *pvParameter)
                             ESP_LOGE(TAG, "Send error");
                             espnow_deinit(send_param);
                             vTaskDelete(NULL);
-
                         send_param->unicast = true;
                         send_param->broadcast = false;
                        }
                         memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
-                        vConfigSetNVS(PeerTable,"PeerTable");
+                        vConfigSetNVS(PeerTable, "PeerTable");
                 		memcpy(mac,PeerTable + (buf->Nodeid)*(ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
                         ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d is the position %d", MAC2STR(mac),buf->Nodeid, (buf->Nodeid)*(ESP_NOW_ETH_ALEN));
                     }
@@ -747,15 +711,13 @@ static void rpeer_espnow_task(void *pvParameter)
 					U_data.len = buf->data_len;
             		uint8_t slave = U_data.data[0];
             		vNotiUart();
-                	if (buf->dir == FORDWARD){
-                    vConfigGetNVS(RoutingTable,"RoutingTable");
-                    RoutingTable[slave+OFFSET] = buf->Nodeid;
+                	if (dir == FORDWARD){
+                    RoutingTable[slave+LIMIT_NODE_SLAVE] = buf->Nodeid;
                     RoutingTable[buf->Nodeid] = buf->Nodeid;
-                    vConfigSetNVS(RoutingTable,"RoutingTable");
             		ESP_LOGI(TAG, "BackMAC  data from: "MACSTR",  of slave %d ", MAC2STR(recv_cb->mac_addr),slave);
                     }
 					uint8_t mode = uComGetTransData(slave);
-					switch(buf->dir){
+					switch(dir){
 						case FORDWARD:
 							switch(mode){
 							case SERIAL:
@@ -768,14 +730,12 @@ static void rpeer_espnow_task(void *pvParameter)
 								vConfigSetNode(U_data,ESP_NOW);
 								break;
 							case JUMP:
-								U_data.dir = buf ->dir;
-								ESP_LOGI(TAG,"JUMP DIR %d: ", buf ->dir );
-								xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
+								U_data.dir = dir;
+								ESP_LOGI(TAG,"JUMP DIR %d: ", dir );
+								xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);//xxx
 							}
 							break;
 							case BACKWARD:
-								vConfigGetNVS(RoutingTable,"RoutingTable");
-		                        vConfigGetNVS(PeerTable,"PeerTable");
 								memcpy(back_mac, PeerTable+(RoutingTable[slave+OFFSET]*ESP_NOW_ETH_ALEN), ESP_NOW_ETH_ALEN);
 								if(memcmp(back_mac, broadcast_mac, ESP_NOW_ETH_ALEN)==0){
 									uart_write_bytes(UART_NUM_1,(const char*) U_data.data ,U_data.len);
@@ -783,9 +743,9 @@ static void rpeer_espnow_task(void *pvParameter)
 									ESP_LOGI(TAG,"SERIAL response");
 								}
 								else {
-									U_data.dir = buf ->dir;
-									ESP_LOGI(TAG,"JUMP BACK %d: ", buf ->dir );
-									xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
+									U_data.dir = dir;
+									ESP_LOGI(TAG,"JUMP BACK %d: ", dir );
+									xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);//xxx
 								};
 					}
 
@@ -867,7 +827,7 @@ static esp_err_t espnow_init(void)
     memcpy(send_param->dest_mac, broadcast_mac, ESP_NOW_ETH_ALEN);
     espnow_data_prepare(send_param);
     vEspnowGetOldPeers();
-    xTaskCreate(rpeer_espnow_task, "register_peer", 2048*4, send_param, 4, NULL);
+    xTaskCreate(espnow_manage_task, "espnow_manage_task", 2048*4, send_param, 4, NULL);
     return ESP_OK;
 }
 
@@ -880,34 +840,32 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 }
 
 static void rx_task(void *arg){
-	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] = {0};
-	vConfigGetNVS(HoldingRegister,"HoldingRegister");
     UARTinit(HoldingRegister[BaudaRate]);
     uart_event_t event;
     uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
     static const char *RX_TASK_TAG = "RX_TASK";
     esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
     esp_uart_data_t U_data;
+    espnow_event_t evt;
     for(;;) {
-        //Waiting for UART event.
         if(xQueueReceive(uart1_queue, (void * )&event, (portTickType)portMAX_DELAY)) {
             bzero(dtmp, RX_BUF_SIZE);
             ESP_LOGI(RX_TASK_TAG, "uart[%d] event:", UART_NUM_1);
             switch(event.type) {
-                //Event of UART receving data
                 case UART_DATA:
                     uart_read_bytes(UART_NUM_1, dtmp, event.size, portMAX_DELAY);
                     uint8_t info = uComDirection(&dtmp[0]);
                     U_data.data = dtmp;
                     U_data.len = (uint8_t) event.size;
-                    ESP_LOGI(RX_TASK_TAG,"Data recivida\n");
+                    ESP_LOGI(RX_TASK_TAG,"Data recivida id %x \n",dtmp[0]);
                     switch(info){
                     case EX_SLAVE:
-                    	// Query of response BACK
-                    	xQueueSend(espnow_Squeue,&U_data,(portTickType)portMAX_DELAY);
+                    	evt.id = ESPNOW_SEND_CB;
+                    	evt.info.send_t.id = ESPNOW_TO_SEND;
+                    	evt.info.send_t.info.send_data = U_data;
+                    	xQueueSend(espnow_queue,&evt,(portTickType)portMAX_DELAY);
 						break;
                     case NODE:
-                    	// TO ME
                     	ESP_LOGI(RX_TASK_TAG,"Node");
                     	vConfigSetNode(U_data,UART);
                     	break;
@@ -916,36 +874,25 @@ static void rx_task(void *arg){
                     xQueueReset(uart1_queue);
                     vNotiUart();
                     break;
-                //Event of HW FIFO overflow detected
                 case UART_FIFO_OVF:
                     ESP_LOGI(RX_TASK_TAG, "hw fifo overflow");
-                    // If fifo overflow happened, you should consider adding flow control for your application.
-                    // The ISR has already reset the rx FIFO,
-                    // As an example, we directly flush the rx buffer here in order to read more data.
                     uart_flush_input(UART_NUM_1);
                     xQueueReset(uart1_queue);
                     break;
-                //Event of UART ring buffer full
                 case UART_BUFFER_FULL:
                     ESP_LOGI(RX_TASK_TAG, "ring buffer full");
-                    // If buffer full happened, you should consider encreasing your buffer size
-                    // As an example, we directly flush the rx buffer here in order to read more data.
                     uart_flush_input(UART_NUM_1);
                     xQueueReset(uart1_queue);
                     break;
-                //Event of UART RX break detected
                 case UART_BREAK:
                     ESP_LOGI(RX_TASK_TAG, "uart rx break");
                     break;
-                //Event of UART parity check error
                 case UART_PARITY_ERR:
                     ESP_LOGI(RX_TASK_TAG, "uart parity error");
                     break;
-                //Event of UART frame error
                 case UART_FRAME_ERR:
                     ESP_LOGI(RX_TASK_TAG, "uart frame error");
                     break;
-                //Others
                 default:
                     ESP_LOGI(RX_TASK_TAG, "uart event type: %d", event.type);
                     break;
@@ -958,97 +905,21 @@ static void rx_task(void *arg){
 }
 
 void vConfigLoad(){
-    esp_err_t err = nvs_flash_init();
-
-
-	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
-	    if (err != ESP_OK) {
-	        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-	    } else {
-	        printf("Done\n");
-
-	        // Read
-	        printf("Reading Config from NVS ...\n ");
-	        uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0}; // value will default to 0, if not set yet in NVS
-	        size_t size_data = sizeof(HoldingRegister);
-
-	        uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
-	        size_t size_RT = sizeof(RoutingTable);
-
-	        uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
-	        size_t size_Peer = sizeof(PeerTable);
-	        HoldingRegister[NodeID]= DEFAULT_ID;
-	        HoldingRegister[BaudaRate]= DEFAULT_BR;
-
-
-	        err = nvs_get_blob(nvshandle, "HoldingRegister", HoldingRegister, &size_data);
-	        switch (err) {
-	            case ESP_OK:
-	                printf("Config Holding Register loaded: %d BR and ID %d\n",HoldingRegister[BaudaRate],HoldingRegister[NodeID] );
-	                break;
-	            case ESP_ERR_NVS_NOT_FOUND:
-	                printf("The value is not initialized yet!\n");
-	                break;
-	            default :
-	                printf("Error (%s) reading!\n", esp_err_to_name(err));
-	        }
-	        err = nvs_get_blob(nvshandle, "RoutingTable",RoutingTable, &size_RT);
-	        switch (err) {
-	            case ESP_OK:
-	                printf("Config RoutingTable loaded\n");
-	                break;
-	            case ESP_ERR_NVS_NOT_FOUND:
-	                printf("The RT is not initialized yet!\n");
-	                break;
-	            default :
-	                printf("Error (%s) reading!\n", esp_err_to_name(err));
-	        }
-
-	        err = nvs_get_blob(nvshandle, "PeerTable",PeerTable, &size_Peer);
-	        switch (err) {
-	            case ESP_OK:
-	                printf("Config Peer Table loaded\n");
-	                break;
-	            case ESP_ERR_NVS_NOT_FOUND:
-	                printf("The Peer Table is not initialized yet!\n");
-	                break;
-	            default :
-	                printf("Error (%s) reading!\n", esp_err_to_name(err));
-	        }
-	        // Write
-	        printf("Updating HR in NVS ... \n");
-	        err = nvs_set_blob(nvshandle, "HoldingRegister", HoldingRegister,size_data);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-
-	        printf("Updating RT in NVS ... \n");
-	        err = nvs_set_blob(nvshandle, "RoutingTable", RoutingTable,size_RT);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-	        printf("Updating PT in NVS ... \n");
-	        err = nvs_set_blob(nvshandle, "PeerTable", PeerTable,size_Peer);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-	        // Commit written value.
-	        // After setting any values, nvs_commit() must be called to ensure changes are written
-	        // to flash storage. Implementations may write to storage at other times,
-	        // but this is not guaranteed.
-	        printf("Committing updates in NVS ... ");
-	        err = nvs_commit(nvshandle);
-	        printf((err != ESP_OK) ? "Failed!\n" : "Config Done\n");
-
-	        // Close
-	        nvs_close(nvshandle);
-
-	        Node_ID = HoldingRegister[NodeID];
-	        BaudaRateID = HoldingRegister[BaudaRate];
-	    }
+	HoldingRegister[NodeID]= DEFAULT_ID;
+	HoldingRegister[BaudaRate]= DEFAULT_BR;
+	vConfigGetNVS(HoldingRegister,"HoldingRegister");
+	vConfigGetNVS(RoutingTable,"RoutingTable");
+	vConfigGetNVS(PeerTable,"PeerTable");
+	memcpy(HoldingRAM,HoldingRegister,HOLDING_REGISTER_SIZE);
+	ESP_LOGE(TAG,"Configuracion Cargada: BaudaRate ID (%d) y MODBUS ID (%d)",HoldingRegister[BaudaRate],HoldingRegister[NodeID]);
 }
+
 
 void vConfigFormatFactory( void ){
 
-	uint8_t HoldingRegister[HOLDING_REGISTER_SIZE] ={0};
-	uint8_t RoutingTable[ROUTING_TABLE_SIZE] ={0};
-	uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN] ={0};
 	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
 	bzero(RoutingTable,ROUTING_TABLE_SIZE);
+	bzero(HoldingRegister,HOLDING_REGISTER_SIZE);
 	HoldingRegister[NodeID] = DEFAULT_ID;
 	HoldingRegister[BaudaRate] = DEFAULT_BR;
 	vConfigSetNVS(HoldingRegister,"HoldingRegister");
@@ -1060,66 +931,36 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
 	static BaseType_t xHigherPriorityTaskWoken;
 	xHigherPriorityTaskWoken = pdFALSE;
-   // uint32_t gpio_num = (uint32_t) arg;
-    //xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
     xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken);
 }
 
 void FormatFactory(void *arg){
-
-    gpio_config_t io_conf;
-
-    //interrupt of rising edge
-    io_conf.intr_type = GPIO_PIN_INTR_NEGEDGE;
-    //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = 1ULL<<GPIO_INPUT_IO_0;
-    //set as input mode
-    io_conf.mode = GPIO_MODE_INPUT;
-    //enable pull-up mode
-    io_conf.pull_up_en = 1;
-    io_conf.pull_down_en = 0;
-    gpio_config(&io_conf);
-
-    //change gpio intrrupt type for one pin
     gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_NEGEDGE);
-
-    //create a queue to handle gpio event from isr
-    //gpio_evt_queue = xQueueCreate(1, sizeof(uint32_t));
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+    gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
+	uint8_t ticksTorestart = 5;
     xSemaphore = xSemaphoreCreateBinary();
-    //install gpio isr service
-     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
-     //hook isr handler for specific gpio pin
-     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
-     //remove isr handler for gpio number.
-     gpio_isr_handler_remove(GPIO_INPUT_IO_0);
-     //hook isr handler for specific gpio pin again
-     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
-	int t = 0;
-	//uint32_t io_num;
-	ESP_LOGI(TAG, "FORMAT FACTORY TASK");
-
-	while(xSemaphoreTake( xSemaphore, portMAX_DELAY) == pdTRUE){//xxx
+	ESP_LOGI(TAG, "FORMAT FACTORY TASK CREATED");
+	while(xSemaphoreTake( xSemaphore, portMAX_DELAY) == pdTRUE){
 		while(gpio_get_level(GPIO_INPUT_IO_0)==0){
-			vTaskDelay(10/portTICK_RATE_MS);
-			t++;
-			if (t == 500){
-				printf("Format factory\n");
+			ESP_LOGI(TAG, "Restarting in %d segundos", ticksTorestart);
+			vTaskDelay(1000/portTICK_RATE_MS);
+			ticksTorestart--;
+			if (ticksTorestart == 0){
 				vConfigFormatFactory();
 				vTaskDelay(1000/portTICK_RATE_MS);
-			    printf("Restarting \n");
+			    ESP_LOGE(TAG,"Restarting \n");
 			    fflush(stdout);
 			    esp_restart();
-				break;
 			}
 		}
-		t = 0;
+		ticksTorestart = 5;
         vTaskDelay(1000/portTICK_RATE_MS);
 	}
 }
 
 void app_main()
 {
-    // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK( nvs_flash_erase() );
@@ -1127,7 +968,7 @@ void app_main()
     }
    // nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
-    //esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
     vConfigLoad();
    // Create UART tasks
     xTaskCreatePinnedToCore(rx_task, "uart_rx_task", 2048*2, NULL, configMAX_PRIORITIES, NULL,1);

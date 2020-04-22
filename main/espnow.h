@@ -29,10 +29,31 @@ typedef enum {
     ESPNOW_RECV_CB,
 } espnow_event_id_t;
 
+typedef enum {
+    ESPNOW_TO_SEND,
+    ESPNOW_FROM_CB,
+} espnow_send_id_t;
+
+typedef struct {
+	uint8_t len;                              /* length of the data*/
+	uint8_t *data;								/* pointing to the data*/
+	uint8_t dir;								/* direction od the data*/
+} __attribute__((packed)) esp_uart_data_t;
+
 typedef struct {
     uint8_t mac_addr[ESP_NOW_ETH_ALEN];
     esp_now_send_status_t status;
 } espnow_event_send_cb_t;
+
+typedef union {
+	espnow_event_send_cb_t send_cb;
+	esp_uart_data_t send_data;
+} espnow_send_data_t;
+
+typedef struct {
+	espnow_send_data_t info;
+	espnow_send_id_t id;
+} espnow_send_t;
 
 typedef struct {
     uint8_t mac_addr[ESP_NOW_ETH_ALEN];
@@ -41,7 +62,7 @@ typedef struct {
 } espnow_event_recv_cb_t;
 
 typedef union {
-    espnow_event_send_cb_t send_cb;
+    espnow_send_t send_t;
     espnow_event_recv_cb_t recv_cb;
 } espnow_event_info_t;
 
@@ -85,6 +106,11 @@ enum{
 	UART
 };
 
+enum {
+	RESTART,
+	SAVE_RAM,
+	SAVE_FLASH
+} ;
 typedef union
 {
     uint16_t Val;
@@ -123,11 +149,7 @@ typedef struct {
 /**
  * @ struct for that data ESPNOW <-> UART
  */
-typedef struct {
-	uint8_t len;                              /* length of the data*/
-	uint8_t *data;								/* pointing to the data*/
-	uint8_t dir;								/* direction od the data*/
-} __attribute__((packed)) esp_uart_data_t;
+
 
 
 #endif
