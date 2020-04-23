@@ -358,7 +358,7 @@ void RegisterPeer(uint8_t mac[ESP_NOW_ETH_ALEN]){
 void vEspnowGetOldPeers(void){
 	ESP_LOGI(TAG, "Registering Old Peers");
 	uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
-	for (uint16_t j = 0 ; j <=255 ; j++){
+	for (uint16_t j = 0 ; j < ROUTING_TABLE_SIZE ; j++){
 		memcpy(mac,PeerTable + (RoutingTable[j]* ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
 		if((RoutingTable[j]!=0)&&(memcmp(PeerTable + RoutingTable[j]* ESP_NOW_ETH_ALEN, broadcast_mac , ESP_NOW_ETH_ALEN)) !=0){
 			RegisterPeer(mac);
@@ -662,7 +662,7 @@ static void espnow_manage_task(void *pvParameter)
                     ESP_LOGI(TAG, "Receive %dth broadcast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 
                     /* If MAC address does not exist in peer list, add it to peer list. */
-                    if ((esp_now_is_peer_exist(recv_cb->mac_addr) == false)&&(RoutingTable[buf->Nodeid]!=0)) {//xxx about to test
+                    if ((esp_now_is_peer_exist(recv_cb->mac_addr) == false)) {//xxx about to test
                         esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
                         if (peer == NULL) {
                             ESP_LOGE(TAG, "Malloc peer information fail");
@@ -704,8 +704,8 @@ static void espnow_manage_task(void *pvParameter)
             		uint8_t slave = U_data.data[0];
             		vNotiUart();
                 	if (dir == FORDWARD){
-                    RoutingTable[slave+LIMIT_NODE_SLAVE] = buf->Nodeid;
-                    RoutingTable[buf->Nodeid] = buf->Nodeid;
+                    RoutingTable[slave+OFFSET] = buf->Nodeid;
+                    vConfigSetNVS(RoutingTable, "RoutingTable");
             		ESP_LOGI(TAG, "BackMAC  data from: "MACSTR",  of slave %d ", MAC2STR(recv_cb->mac_addr),slave);
                     }
 					uint8_t mode = uComGetTransData(slave);
@@ -958,7 +958,7 @@ void app_main()
         ESP_ERROR_CHECK( nvs_flash_erase() );
         ret = nvs_flash_init();
     }
-  // nvs_flash_erase();
+    //nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
     esp_log_level_set(TAG, ESP_LOG_INFO);
     vConfigLoad();
