@@ -65,17 +65,13 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "espdefine.h"
 #include "driver/gpio.h"
 #include "uart_func.h"
-
+#include "hdr/storage.h"
 
 
 
 
 static const int RX_BUF_SIZE = 1024;
 static const int TX_BUF_SIZE = 1024;
-
-#define ROUTING_TABLE_SIZE 512 // xx should be 256
-#define PEER_TABLE_SIZE 256
-#define HOLDING_REGISTER_SIZE 513
 #define LIMIT_NODE_SLAVE 100
 #define TXD_PIN 25//(GPIO_NUM_33)
 #define RXD_PIN 14//14//(GPIO_NUM_26)
@@ -120,10 +116,6 @@ static uint16_t s_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 
 static void espnow_deinit(espnow_send_param_t *send_param);
-static uint8_t RoutingTable[ROUTING_TABLE_SIZE];
-static uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
-static uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];
-static uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN];
 static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 {
     switch(event->event_id) {
@@ -168,7 +160,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 		int sw = 0;
 		if(strcmp(Name, "HoldingRegister") == 0){
 			sw = 1;
-			size_data =HOLDING_REGISTER_SIZE;
+			size_data = HOLDING_REGISTER_SIZE;
 		}
 		if(strcmp(Name, "RoutingTable") == 0){
 			sw = 2;
@@ -185,7 +177,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 				err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
 					switch (err) {
 						case ESP_OK:
-							;
+							printf("Holding reading success\n");
 							break;
 						case ESP_ERR_NVS_NOT_FOUND:
 							printf("The value is not initialized yet!\n");
@@ -966,7 +958,7 @@ void app_main()
         ESP_ERROR_CHECK( nvs_flash_erase() );
         ret = nvs_flash_init();
     }
-   // nvs_flash_erase();
+  // nvs_flash_erase();
     ESP_ERROR_CHECK( ret );
     esp_log_level_set(TAG, ESP_LOG_INFO);
     vConfigLoad();
