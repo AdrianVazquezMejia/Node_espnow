@@ -379,6 +379,7 @@ void espnow_send(void *pvParameter){
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	ESP_LOGI(TAG,"Send Function Activated");
     	des_node = RoutingTable[U_data.data[0]];
+    	if (des_node == 0) continue; //No route
     	send_param->dir  = FORDWARD;
     	if ((des_node == HoldingRegister[NodeID])||(U_data.dir == BACKWARD)){
         	des_node = RoutingTable[OFFSET+U_data.data[0]];
@@ -394,6 +395,7 @@ void espnow_send(void *pvParameter){
     	bzero(buf->payload,ESPNOW_PAYLOAD_SIZE);
     	memcpy(buf->payload,U_data.data,U_data.len);
     	buf->data_len = U_data.len;
+    	buf->state = false;
     	espnow_data_prepare(send_param);
     	if (esp_now_send(send_param->dest_mac, send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
@@ -456,7 +458,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 	INT_VAL CRC;
 	Value.byte.HB = data.data[4];
 	Value.byte.LB = data.data[5];
-	uint16_t offset = 256;
+	const uint16_t offset = 256;
 
 	if (CRC16(data.data,data.len) == 0){
 		vNotiUart();
@@ -466,8 +468,10 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				ESP_LOGI(TAG,"Node Id not allowed, must be greater than 100\n");
 				break;
 			}
-			if (Address.Val > offset)
+			if (Address.Val > offset){
 				HoldingRAM[Value.Val+offset] = Value.Val;
+				ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRAM[Value.Val+offset],Value.Val);
+			}
 			HoldingRAM[Address.Val] = Value.Val;
 			ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRAM[Address.Val],Address.Val);
 			if (dir == ESP_NOW){
@@ -500,7 +504,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 						UARTinit(HoldingRAM[BaudaRate]);
 				 }
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
-				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE);
+				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE-offset);
 				 ESP_LOGI(TAG,"Saved in RAM");
 				 if (dir == ESP_NOW){
 					 data.dir = BACKWARD;
@@ -511,7 +515,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				 break;
 			case SAVE_FLASH:
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
-				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE);
+				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE-offset);
 				 vConfigSetNVS(RoutingTable,"RoutingTable");
 				 vConfigSetNVS(HoldingRegister,"HoldingRegister");
 				 ESP_LOGI(TAG,"Saved in FLASH");
@@ -584,7 +588,7 @@ static void espnow_manage_task(void *pvParameter)
     uint16_t recv_seq = 0;
     int ret;
     int Peer_Quantity = 0;
-    int count=10;
+    int count=0;
     uint8_t tries = 0;
     esp_uart_data_t U_data;
     vTaskDelay(5000 / portTICK_RATE_MS);
@@ -592,12 +596,12 @@ static void espnow_manage_task(void *pvParameter)
     uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
     /* Start sending broadcast ESPNOW data. */
     espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
-    espnow_data_prepare(send_param);
+/*    espnow_data_prepare(send_param);
     if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
         ESP_LOGE(TAG, "Send error");
         espnow_deinit(send_param);
         vTaskDelete(NULL);
-    }
+    }*/
 	xTaskCreate(espnow_send, "espnow_send", 2048*4, send_param, 3, NULL);
     while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {
         switch (evt.id) {
@@ -656,52 +660,57 @@ static void espnow_manage_task(void *pvParameter)
                 /*Verify is broadcast*/
                 ret = espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq , &dir);
                 espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
-
+				U_data.data = buf->payload;
+				U_data.len = buf->data_len;
+        		uint8_t slave = U_data.data[0];
 
                 if (ret == ESPNOW_DATA_BROADCAST) {
                     ESP_LOGI(TAG, "Receive %dth broadcast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 
                     /* If MAC address does not exist in peer list, add it to peer list. */
-                    if ((esp_now_is_peer_exist(recv_cb->mac_addr) == false)) {//xxx about to test
-                        esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
-                        if (peer == NULL) {
-                            ESP_LOGE(TAG, "Malloc peer information fail");
-                            espnow_deinit(send_param);
-                            vTaskDelete(NULL);
-                        }
-                        memset(peer, 0, sizeof(esp_now_peer_info_t));
-                        peer->channel = CONFIG_ESPNOW_CHANNEL;
-                        peer->ifidx = ESPNOW_WIFI_IF;
-                        peer->encrypt = true;
-                        memcpy(peer->lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
-                        memcpy(peer->peer_addr, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
-                        ESP_ERROR_CHECK( esp_now_add_peer(peer) );
-                        Peer_Quantity++;
-                        ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(recv_cb->mac_addr));
-                        free(peer);
-                        /* Send the response to the new peer, for register myself with it*/
-
-                        espnow_data_prepare(send_param);
-                        send_param->unicast = false;
-                        send_param->broadcast = true;
-                        if (esp_now_send(broadcast_mac, send_param->buffer, send_param->len) != ESP_OK) {
-                            ESP_LOGE(TAG, "Send error");
-                            espnow_deinit(send_param);
-                            vTaskDelete(NULL);
-                        send_param->unicast = true;
-                        send_param->broadcast = false;
-                       }
-                        memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
-                        vConfigSetNVS(PeerTable, "PeerTable");
-                		memcpy(mac,PeerTable + (buf->Nodeid)*(ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
-                        ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d is the position %d", MAC2STR(mac),buf->Nodeid, (buf->Nodeid)*(ESP_NOW_ETH_ALEN));
+                    if (HoldingRegister[NodeID]== slave || RoutingTable[slave]!=0){
+                    	ESP_LOGE(TAG, "Broadcast Slave %d ", slave);
+						if ((esp_now_is_peer_exist(recv_cb->mac_addr) == false)) {//xxx about to test
+							esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
+							if (peer == NULL) {
+								ESP_LOGE(TAG, "Malloc peer information fail");
+								espnow_deinit(send_param);
+								vTaskDelete(NULL);
+							}
+							memset(peer, 0, sizeof(esp_now_peer_info_t));
+							peer->channel = CONFIG_ESPNOW_CHANNEL;
+							peer->ifidx = ESPNOW_WIFI_IF;
+							peer->encrypt = true;
+							memcpy(peer->lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
+							memcpy(peer->peer_addr, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
+							ESP_ERROR_CHECK( esp_now_add_peer(peer) );
+							Peer_Quantity++;
+							ESP_LOGI(TAG, "Peer %dth added,  MAC: "MACSTR"",Peer_Quantity, MAC2STR(recv_cb->mac_addr));
+							free(peer);
+							/* Send the response to the new peer, for register myself with it*/
+							if(buf->state == false){
+								send_param->buffer =recv_cb->data;
+								send_param->state = true;
+								espnow_data_prepare(send_param);
+								send_param->unicast = false;
+								send_param->broadcast = true;
+								if (esp_now_send(broadcast_mac, send_param->buffer, send_param->len) != ESP_OK) {
+									ESP_LOGE(TAG, "Send error");
+									espnow_deinit(send_param);
+									vTaskDelete(NULL);
+								}
+								send_param->unicast = true;
+								send_param->broadcast = false;
+							}
+							memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
+							vConfigSetNVS(PeerTable, "PeerTable");
+							memcpy(mac,PeerTable + (buf->Nodeid)*(ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
+							ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d is the position %d", MAC2STR(mac),buf->Nodeid, (buf->Nodeid)*(ESP_NOW_ETH_ALEN));
+						}
                     }
                 }
                 else if (ret == ESPNOW_DATA_UNICAST) {
             		ESP_LOGI(TAG, "Receive %dth unicast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
-					U_data.data = buf->payload;
-					U_data.len = buf->data_len;
-            		uint8_t slave = U_data.data[0];
             		vNotiUart();
                 	if (dir == FORDWARD){
                     RoutingTable[slave+OFFSET] = buf->Nodeid;
