@@ -5,6 +5,8 @@
  *      Author: adrian-estelio
  */
 #include <stdint.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #define HOLDING_REGISTER_SIZE 512
 #define ROUTING_TABLE_SIZE 512 // xx should be 256
 #define PEER_TABLE_SIZE 256
@@ -15,4 +17,5 @@ uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
 uint8_t RoutingTable[ROUTING_TABLE_SIZE];
 uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];
 uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN];
+xQueueHandle espnow_Squeue;
 #endif /* MAIN_HDR_STORAGE_H_ */

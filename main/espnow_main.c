@@ -68,7 +68,7 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "hdr/storage.h"
 #include "nvs.h"
 #include "config.h"
-
+#include "modbus.h"
 
 
 
@@ -89,13 +89,13 @@ static const int TX_BUF_SIZE = 1024;
 #define ESP_INTR_FLAG_DEFAULT 0
 
 static const char *TAG = "espnow";
-static const char *TAG_MB = "espnow";
+
 
 //Queue definitions
 nvs_handle nvshandle;
 static xQueueHandle espnow_queue;
 static QueueHandle_t uart1_queue;
-static xQueueHandle espnow_Squeue;
+//static xQueueHandle espnow_Squeue;
 static xQueueHandle espnow_Rqueue;
 static SemaphoreHandle_t xSemaphore = NULL;
 
@@ -252,7 +252,7 @@ void vEspnowGetOldPeers(void){
 
 void espnow_send(void *pvParameter){
 	espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
-	esp_uart_data_t U_data;
+	uart_data_t U_data;
 	espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
     send_param->unicast = true;
     send_param->broadcast = false;
@@ -355,7 +355,7 @@ void vExecModbus(esp_uart_data_t data, uint8_t dir){
 			ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRAM[Address.Val],Address.Val);
 			if (dir == ESP_NOW){
 				data.dir = BACKWARD;
-				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);//xxx
 			}
 			else
 			uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
@@ -458,7 +458,7 @@ void vExecModbus(esp_uart_data_t data, uint8_t dir){
 		else
 			uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
 	}
-}
+}*/
 static void espnow_manage_task(void *pvParameter)
 {
     espnow_event_t evt;
@@ -469,7 +469,7 @@ static void espnow_manage_task(void *pvParameter)
     int Peer_Quantity = 0;
     int count=10;
     uint8_t tries = 0;
-    esp_uart_data_t U_data;
+    uart_data_t U_data;
     vTaskDelay(5000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "Start sending broadcast data");
     uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
@@ -525,7 +525,7 @@ static void espnow_manage_task(void *pvParameter)
                 		tries = 0;
                 		ESP_LOGI(TAG,"Enviando a la cola de enviar");
                 		espnow_send_data_t *espnow_data = &evt.info.send_t.info;
-                		U_data = espnow_data->send_data;
+                		U_data =(uart_data_t) espnow_data->send_data;
                 		xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
                 		break;
                 	}

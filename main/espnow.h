@@ -82,14 +82,8 @@ enum{
 	FORDWARD = 0,
 	BACKWARD
 };
-enum{
-	WRITE_COIL =5,
-	WRITE_HOLDING_REGISTER
-};
-enum{
-	READ_HOLDING =3,
 
-};
+
 enum{
 	EX_SLAVE,
 	NODE,
@@ -106,11 +100,7 @@ enum{
 	UART
 };
 
-enum {
-	RESTART,
-	SAVE_RAM,
-	SAVE_FLASH
-} ;
+
 typedef union
 {
     uint16_t Val;
