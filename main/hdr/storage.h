@@ -10,7 +10,7 @@
 #define PEER_TABLE_SIZE 256
 #ifndef MAIN_HDR_STORAGE_H_
 #define MAIN_HDR_STORAGE_H_
-
+#define ESP_NOW_ETH_ALEN 6
 uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
 uint8_t RoutingTable[ROUTING_TABLE_SIZE];
 uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];

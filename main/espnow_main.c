@@ -66,6 +66,7 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "driver/gpio.h"
 #include "uart_func.h"
 #include "hdr/storage.h"
+#include "nvs.h"
 
 
 
@@ -90,14 +91,14 @@ static const char *TAG = "espnow";
 static const char *TAG_MB = "espnow";
 
 //Queue definitions
-
+nvs_handle nvshandle;
 static xQueueHandle espnow_queue;
 static QueueHandle_t uart1_queue;
 static xQueueHandle espnow_Squeue;
 static xQueueHandle espnow_Rqueue;
 static SemaphoreHandle_t xSemaphore = NULL;
 
-nvs_handle nvshandle;
+
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint16_t s_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
@@ -137,114 +138,7 @@ static void wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
 #endif
 }
-void vConfigGetNVS(uint8_t *Array , const char *Name){
-    esp_err_t err = nvs_flash_init();
 
-	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
-    if (err != ESP_OK) {
-        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-    } else {
-		size_t size_data = 0;
-		int sw = 0;
-		if(strcmp(Name, "HoldingRegister") == 0){
-			sw = 1;
-			size_data = HOLDING_REGISTER_SIZE;
-		}
-		if(strcmp(Name, "RoutingTable") == 0){
-			sw = 2;
-			size_data =ROUTING_TABLE_SIZE;
-		}
-		if(strcmp(Name, "PeerTable") == 0){
-			sw = 3;
-			size_data =PEER_TABLE_SIZE * ESP_NOW_ETH_ALEN;
-			}
-		switch(sw){
-
-			case 1:
-
-				err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
-					switch (err) {
-						case ESP_OK:
-							printf("Holding reading success\n");
-							break;
-						case ESP_ERR_NVS_NOT_FOUND:
-							printf("The value is not initialized yet!\n");
-							break;
-						default :
-							printf("Error (%s) reading!\n", esp_err_to_name(err));
-					}
-					break;
-
-			case 2:
-
-
-			err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
-			switch (err) {
-				case ESP_OK:
-					break;
-				case ESP_ERR_NVS_NOT_FOUND:
-					printf("The RT is not initialized yet!\n");
-					break;
-				default :
-					printf("Error (%s) reading!\n", esp_err_to_name(err));
-			}
-			break;
-
-			case 3:
-			err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
-			switch (err) {
-				case ESP_OK:
-					break;
-				case ESP_ERR_NVS_NOT_FOUND:
-					printf("The Peer Table is not initialized yet!\n");
-					break;
-				default :
-					printf("Error (%s) reading!\n", esp_err_to_name(err));
-			}
-			break;
-		}
-		nvs_close(nvshandle);
-    }
-}
-
-void vConfigSetNVS(uint8_t *Array , const char *Name){
-    esp_err_t err = nvs_flash_init();
-	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
-    size_t size_data = 0;
-    int sw = 0;
-    if(strcmp(Name, "HoldingRegister") == 0){
-    	sw = 1;
-    	size_data = (size_t) HOLDING_REGISTER_SIZE;
-    }
-    if(strcmp(Name, "RoutingTable") == 0){
-        sw = 2;
-        size_data =(size_t) ROUTING_TABLE_SIZE;
-    }
-    if(strcmp(Name, "PeerTable") == 0){
-    	sw = 3;
-    	size_data = PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN;
-        }
-    switch(sw){
-
-    	case 1:
-	        err = nvs_set_blob(nvshandle, "HoldingRegister", Array,size_data);
-		    break;
-
-		case 2:
-	        err = nvs_set_blob(nvshandle, "RoutingTable", Array,size_data);
-	        break;
-
-		case 3:
-	        err = nvs_set_blob(nvshandle, "PeerTable", Array,size_data);
-	        break;
-		default :
-				printf("Error (%s) reading!\n", esp_err_to_name(err));
-				break;
-    }
-
-    err = nvs_commit(nvshandle);
-    nvs_close(nvshandle);
-}
 static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
     espnow_event_t evt;
