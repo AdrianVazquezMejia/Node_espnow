@@ -75,20 +75,13 @@ static const int TX_BUF_SIZE = 1024;
 #define LIMIT_NODE_SLAVE 100
 #define TXD_PIN 25//(GPIO_NUM_33)
 #define RXD_PIN 14//14//(GPIO_NUM_26)
-
-// RTS for RS485 Half-Duplex Mode manages DE/~RE
 #define RTS_PIN   27//(25)
-
-
 #define CTS_PIN   (19)
-
 #define NodeID 0
 #define DEFAULT_ID 255
 #define BaudaRate 1
 #define DEFAULT_BR 10 //115200
-
 #define OFFSET	256
-
 #define GPIO_INPUT_IO_0     0
 #define GPIO_OUTPUT_IO_19	2//xxx 19
 #define ESP_INTR_FLAG_DEFAULT 0
@@ -96,20 +89,15 @@ static const int TX_BUF_SIZE = 1024;
 static const char *TAG = "espnow";
 static const char *TAG_MB = "espnow";
 
- //Queue definitions
+//Queue definitions
 
 static xQueueHandle espnow_queue;
-
 static QueueHandle_t uart1_queue;
-
 static xQueueHandle espnow_Squeue;
-
 static xQueueHandle espnow_Rqueue;
-
-
 static SemaphoreHandle_t xSemaphore = NULL;
 
- nvs_handle nvshandle;
+nvs_handle nvshandle;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint16_t s_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
