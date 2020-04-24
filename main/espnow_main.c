@@ -330,7 +330,7 @@ uint8_t uComDirection(uint8_t *Slave){
 	return -1;
 }
 
-void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
+void vExecModbus(esp_uart_data_t data, uint8_t dir){
 	uint8_t function = data.data[1];
 	INT_VAL Address;
 	Address.byte.HB = data.data[2];
@@ -602,7 +602,7 @@ static void espnow_manage_task(void *pvParameter)
 								break;
 							case NODECONFIG:
 								ESP_LOGI(TAG,"NODECONFIG");
-								vConfigSetNode(U_data,ESP_NOW);
+								vExecModbus(U_data,ESP_NOW);
 								break;
 							case JUMP:
 								U_data.dir = dir;
@@ -742,7 +742,7 @@ static void rx_task(void *arg){
 						break;
                     case NODE:
                     	ESP_LOGI(RX_TASK_TAG,"Node");
-                    	vConfigSetNode(U_data,UART);
+                    	vExecModbus(U_data,UART);
                     	break;
                     }
                     uart_flush_input(UART_NUM_1);
