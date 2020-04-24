@@ -67,6 +67,7 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "uart_func.h"
 #include "hdr/storage.h"
 #include "nvs.h"
+#include "config.h"
 
 
 
@@ -78,10 +79,10 @@ static const int TX_BUF_SIZE = 1024;
 #define RXD_PIN 14//14//(GPIO_NUM_26)
 #define RTS_PIN   27//(25)
 #define CTS_PIN   (19)
-#define NodeID 0
-#define DEFAULT_ID 255
-#define BaudaRate 1
-#define DEFAULT_BR 10 //115200
+//#define NodeID 0
+//#define DEFAULT_ID 255
+//#define BaudaRate 1
+//#define DEFAULT_BR 10 //115200
 #define OFFSET	256
 #define GPIO_INPUT_IO_0     0
 #define GPIO_OUTPUT_IO_19	2//xxx 19
@@ -788,18 +789,6 @@ void vConfigLoad(){
 	ESP_LOGE(TAG,"Configuracion Cargada: BaudaRate ID (%d) y MODBUS ID (%d)",HoldingRegister[BaudaRate],HoldingRegister[NodeID]);
 }
 
-
-void vConfigFormatFactory( void ){
-
-	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
-	bzero(RoutingTable,ROUTING_TABLE_SIZE);
-	bzero(HoldingRegister,HOLDING_REGISTER_SIZE);
-	HoldingRegister[NodeID] = DEFAULT_ID;
-	HoldingRegister[BaudaRate] = DEFAULT_BR;
-	vConfigSetNVS(HoldingRegister,"HoldingRegister");
-	vConfigSetNVS(RoutingTable,"RoutingTable");
-	vConfigSetNVS(PeerTable,"PeerTable");
-}
 
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
