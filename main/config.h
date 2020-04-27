@@ -12,6 +12,7 @@
 #define BaudaRate 1
 #define DEFAULT_BR 10
 
-void vConfigFormatFactory( void );
+void vConfigFormatFactory();
+void vConfigLoad();
 
 #endif /* MAIN_CONFIG_H_ */

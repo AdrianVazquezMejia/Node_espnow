@@ -778,18 +778,6 @@ static void rx_task(void *arg){
     dtmp = NULL;
     vTaskDelete(NULL);
 }
-
-void vConfigLoad(){
-	HoldingRegister[NodeID]= DEFAULT_ID;
-	HoldingRegister[BaudaRate]= DEFAULT_BR;
-	vConfigGetNVS(HoldingRegister,"HoldingRegister");
-	vConfigGetNVS(RoutingTable,"RoutingTable");
-	vConfigGetNVS(PeerTable,"PeerTable");
-	memcpy(HoldingRAM,HoldingRegister,HOLDING_REGISTER_SIZE);
-	ESP_LOGE(TAG,"Configuracion Cargada: BaudaRate ID (%d) y MODBUS ID (%d)",HoldingRegister[BaudaRate],HoldingRegister[NodeID]);
-}
-
-
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
 	static BaseType_t xHigherPriorityTaskWoken;
