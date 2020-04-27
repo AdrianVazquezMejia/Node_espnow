@@ -71,14 +71,16 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 
 
 
-
+/*
 static const int RX_BUF_SIZE = 1024;
-static const int TX_BUF_SIZE = 1024;
+static const int TX_BUF_SIZE = 1024;*/
 #define LIMIT_NODE_SLAVE 100
+/*
 #define TXD_PIN 25//(GPIO_NUM_33)
 #define RXD_PIN 14//14//(GPIO_NUM_26)
 #define RTS_PIN   27//(25)
 #define CTS_PIN   (19)
+*/
 //#define NodeID 0
 //#define DEFAULT_ID 255
 //#define BaudaRate 1
@@ -94,7 +96,7 @@ static const char *TAG_MB = "espnow";
 //Queue definitions
 nvs_handle nvshandle;
 static xQueueHandle espnow_queue;
-static QueueHandle_t uart1_queue;
+//static QueueHandle_t uart1_queue;
 static xQueueHandle espnow_Squeue;
 static xQueueHandle espnow_Rqueue;
 static SemaphoreHandle_t xSemaphore = NULL;
@@ -301,6 +303,7 @@ uint16_t uComGetTransData(int slave){
 	}
 	return -1;
 }
+/*
 
 void UARTinit(int BTid) {
 	uart_driver_delete(UART_NUM_1);
@@ -319,16 +322,8 @@ void UARTinit(int BTid) {
     uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2,  TX_BUF_SIZE * 2,  20, &uart1_queue, 0);
     uart_set_mode(UART_NUM_1, UART_MODE_RS485_HALF_DUPLEX);
     }
+*/
 
-uint8_t uComDirection(uint8_t *Slave){
-	if (HoldingRegister[NodeID] == *Slave){
-		return NODE;
-		}
-		else{
-			return EX_SLAVE;
-		}
-	return -1;
-}
 
 void vExecModbus(esp_uart_data_t data, uint8_t dir){
 	uint8_t function = data.data[1];

@@ -90,11 +90,7 @@ enum{
 	READ_HOLDING =3,
 
 };
-enum{
-	EX_SLAVE,
-	NODE,
 
-};
 
 enum{
 	SERIAL,
