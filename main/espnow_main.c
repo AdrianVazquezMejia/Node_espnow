@@ -400,8 +400,6 @@ void espnow_send(void *pvParameter){
     	buf->data_len = U_data.len;
     	buf->state = false;
     	espnow_data_prepare(send_param);
-    	if (des_node == 0)
-    		continue;
     	if (esp_now_send(send_param->dest_mac, send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
@@ -510,8 +508,8 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				 }
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
 				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE-offset);
-				 ESP_LOGI(TAG,"Saved in RAM");
 				 if (dir == ESP_NOW){
+					 ESP_LOGI(TAG,"Saved in RAM");
 					 data.dir = BACKWARD;
 					 xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 				 }
@@ -528,6 +526,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 					data.dir = BACKWARD;
 					xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
 				 }
+
 				 else
 					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 				 break;
@@ -552,6 +551,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			if (dir == ESP_NOW){
 				data.dir = BACKWARD;
 				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+
 			}
 			else
 				uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
@@ -919,7 +919,7 @@ void vConfigFormatFactory( void ){
 	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
 	bzero(RoutingTable,ROUTING_TABLE_SIZE);
 	bzero(HoldingRegister,HOLDING_REGISTER_SIZE);
-	HoldingRegister[NodeID] = 151;//xxx
+	HoldingRegister[NodeID] = 150;//xxx
 	HoldingRegister[BaudaRate] = DEFAULT_BR;
 	vConfigSetNVS(HoldingRegister,"HoldingRegister");
 	vConfigSetNVS(RoutingTable,"RoutingTable");

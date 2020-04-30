@@ -109,8 +109,6 @@
         	
     </storageModule>
     	
-    <storageModule moduleId="scannerConfiguration"/>
-    	
     <storageModule moduleId="org.eclipse.cdt.core.pathentry"/>
     	
     <storageModule moduleId="org.eclipse.cdt.make.core.buildtargets">
@@ -168,6 +166,25 @@
         </buildTargets>
         	
     </storageModule>
+    	
+    <storageModule moduleId="scannerConfiguration">
+        		
+        <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+        		
+        <scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.cross.base.705115093;cdt.managedbuild.toolchain.gnu.cross.base.705115093.550492367;cdt.managedbuild.tool.gnu.cross.cpp.compiler.120161579;cdt.managedbuild.tool.gnu.cpp.compiler.input.1275955781">
+            			
+            <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+            		
+        </scannerConfigBuildInfo>
+        		
+        <scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.cross.base.705115093;cdt.managedbuild.toolchain.gnu.cross.base.705115093.550492367;cdt.managedbuild.tool.gnu.cross.c.compiler.1200554234;cdt.managedbuild.tool.gnu.c.compiler.input.759055258">
+            			
+            <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+            		
+        </scannerConfigBuildInfo>
+        	
+    </storageModule>
+    	
+    <storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
     
 </cproject>
-
