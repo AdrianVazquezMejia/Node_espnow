@@ -220,6 +220,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 }
 
 void vConfigSetNVS(uint8_t *Array , const char *Name){
+	ESP_LOGE(TAG,"Guardar en la memoria");
     esp_err_t err = nvs_flash_init();
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
     size_t size_data = 0;
@@ -364,6 +365,8 @@ void vEspnowGetOldPeers(void){
 			RegisterPeer(mac);
 			ESP_LOGI(TAG, "Node %d of position %d added",RoutingTable[j],j );
 		}
+		if (j==150 || j==151 )
+		ESP_LOGE(TAG,"%d",RoutingTable[j]);
 	}
 }
 
@@ -379,7 +382,6 @@ void espnow_send(void *pvParameter){
     while(xQueueReceive(espnow_Squeue, &U_data, portMAX_DELAY) == pdTRUE){
     	ESP_LOGI(TAG,"Send Function Activated");
     	des_node = RoutingTable[U_data.data[0]];
-    	if (des_node == 0) continue; //No route
     	send_param->dir  = FORDWARD;
     	if ((des_node == HoldingRegister[NodeID])||(U_data.dir == BACKWARD)){
         	des_node = RoutingTable[OFFSET+U_data.data[0]];
@@ -388,6 +390,7 @@ void espnow_send(void *pvParameter){
     		send_param->dir = BACKWARD;
     	}
     	else {
+    		if (des_node == 0) continue; //No route
     	   	posicion = ESP_NOW_ETH_ALEN * des_node;
     		memcpy(send_param->dest_mac, PeerTable + posicion,ESP_NOW_ETH_ALEN);
     		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR(send_param->dest_mac));
@@ -397,6 +400,8 @@ void espnow_send(void *pvParameter){
     	buf->data_len = U_data.len;
     	buf->state = false;
     	espnow_data_prepare(send_param);
+    	if (des_node == 0)
+    		continue;
     	if (esp_now_send(send_param->dest_mac, send_param->buffer, CONFIG_ESPNOW_SEND_LEN) != ESP_OK) {
     		ESP_LOGE(TAG, "Send error");
     		espnow_deinit(send_param);
@@ -592,16 +597,9 @@ static void espnow_manage_task(void *pvParameter)
     uint8_t tries = 0;
     esp_uart_data_t U_data;
     vTaskDelay(5000 / portTICK_RATE_MS);
-    ESP_LOGI(TAG, "Start sending broadcast data");
+    ESP_LOGI(TAG, "Espnow_task_manage activated");
     uint8_t mac[ESP_NOW_ETH_ALEN] = {0};
-    /* Start sending broadcast ESPNOW data. */
     espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
-/*    espnow_data_prepare(send_param);
-    if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
-        ESP_LOGE(TAG, "Send error");
-        espnow_deinit(send_param);
-        vTaskDelete(NULL);
-    }*/
 	xTaskCreate(espnow_send, "espnow_send", 2048*4, send_param, 3, NULL);
     while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {
         switch (evt.id) {
@@ -666,7 +664,7 @@ static void espnow_manage_task(void *pvParameter)
 
                 if (ret == ESPNOW_DATA_BROADCAST) {
                     ESP_LOGI(TAG, "Receive %dth broadcast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
-
+                    uint8_t recv_NodeID = buf->Nodeid;
                     /* If MAC address does not exist in peer list, add it to peer list. */
                     if (HoldingRegister[NodeID]== slave || RoutingTable[slave]!=0){
                     	ESP_LOGE(TAG, "Broadcast Slave %d ", slave);
@@ -702,10 +700,10 @@ static void espnow_manage_task(void *pvParameter)
 								send_param->unicast = true;
 								send_param->broadcast = false;
 							}
-							memcpy(PeerTable+(buf->Nodeid)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
+							memcpy(PeerTable+(recv_NodeID)*(ESP_NOW_ETH_ALEN), recv_cb->mac_addr,  ESP_NOW_ETH_ALEN);
 							vConfigSetNVS(PeerTable, "PeerTable");
-							memcpy(mac,PeerTable + (buf->Nodeid)*(ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
-							ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d is the position %d", MAC2STR(mac),buf->Nodeid, (buf->Nodeid)*(ESP_NOW_ETH_ALEN));
+							memcpy(mac,PeerTable + (recv_NodeID)*(ESP_NOW_ETH_ALEN),ESP_NOW_ETH_ALEN);
+							ESP_LOGI(TAG, "MAC added is:  "MACSTR" from Node %d is the position %d", MAC2STR(mac),recv_NodeID, (recv_NodeID)*(ESP_NOW_ETH_ALEN));
 						}
                     }
                 }
@@ -921,7 +919,7 @@ void vConfigFormatFactory( void ){
 	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
 	bzero(RoutingTable,ROUTING_TABLE_SIZE);
 	bzero(HoldingRegister,HOLDING_REGISTER_SIZE);
-	HoldingRegister[NodeID] = DEFAULT_ID;
+	HoldingRegister[NodeID] = 151;//xxx
 	HoldingRegister[BaudaRate] = DEFAULT_BR;
 	vConfigSetNVS(HoldingRegister,"HoldingRegister");
 	vConfigSetNVS(RoutingTable,"RoutingTable");

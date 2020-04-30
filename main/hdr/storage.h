@@ -11,8 +11,8 @@
 #ifndef MAIN_HDR_STORAGE_H_
 #define MAIN_HDR_STORAGE_H_
 
-uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
-uint8_t RoutingTable[ROUTING_TABLE_SIZE];
-uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];
-uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN];
+ uint8_t HoldingRegister[HOLDING_REGISTER_SIZE];
+ uint8_t RoutingTable[ROUTING_TABLE_SIZE];
+ uint8_t HoldingRAM[HOLDING_REGISTER_SIZE];
+ uint8_t PeerTable[PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN];
 #endif /* MAIN_HDR_STORAGE_H_ */
