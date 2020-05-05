@@ -6,5 +6,7 @@ bin
 *.a
 *.old
 *.projbuild
+*.project
+*cproject
 
 

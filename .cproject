@@ -111,17 +111,19 @@
     	
     <storageModule moduleId="org.eclipse.cdt.core.pathentry"/>
     	
+    <storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
+    	
     <storageModule moduleId="org.eclipse.cdt.make.core.buildtargets">
         		
         <buildTargets>
             			
-            <target name="all" path="" targetID="org.eclipse.cdt.build.MakeTargetBuilder">
+            <target name="clean" path="" targetID="org.eclipse.cdt.build.MakeTargetBuilder">
                 				
                 <buildCommand>make</buildCommand>
                 				
                 <buildArguments>-j4</buildArguments>
                 				
-                <buildTarget>all</buildTarget>
+                <buildTarget>clean</buildTarget>
                 				
                 <stopOnError>true</stopOnError>
                 				
@@ -131,13 +133,13 @@
                 			
             </target>
             			
-            <target name="clean" path="" targetID="org.eclipse.cdt.build.MakeTargetBuilder">
+            <target name="all" path="" targetID="org.eclipse.cdt.build.MakeTargetBuilder">
                 				
                 <buildCommand>make</buildCommand>
                 				
                 <buildArguments>-j4</buildArguments>
                 				
-                <buildTarget>clean</buildTarget>
+                <buildTarget>all</buildTarget>
                 				
                 <stopOnError>true</stopOnError>
                 				
@@ -171,7 +173,7 @@
         		
         <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
         		
-        <scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.cross.base.705115093;cdt.managedbuild.toolchain.gnu.cross.base.705115093.550492367;cdt.managedbuild.tool.gnu.cross.cpp.compiler.120161579;cdt.managedbuild.tool.gnu.cpp.compiler.input.1275955781">
+        <scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.cross.base.874909030;cdt.managedbuild.toolchain.gnu.cross.base.874909030.1301066987;cdt.managedbuild.tool.gnu.cross.c.compiler.262565024;cdt.managedbuild.tool.gnu.c.compiler.input.1440201573">
             			
             <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
             		
@@ -182,9 +184,19 @@
             <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
             		
         </scannerConfigBuildInfo>
+        		
+        <scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.cross.base.874909030;cdt.managedbuild.toolchain.gnu.cross.base.874909030.1301066987;cdt.managedbuild.tool.gnu.cross.cpp.compiler.755455528;cdt.managedbuild.tool.gnu.cpp.compiler.input.379588628">
+            			
+            <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+            		
+        </scannerConfigBuildInfo>
+        		
+        <scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.cross.base.705115093;cdt.managedbuild.toolchain.gnu.cross.base.705115093.550492367;cdt.managedbuild.tool.gnu.cross.cpp.compiler.120161579;cdt.managedbuild.tool.gnu.cpp.compiler.input.1275955781">
+            			
+            <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+            		
+        </scannerConfigBuildInfo>
         	
     </storageModule>
-    	
-    <storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
     
 </cproject>

@@ -919,7 +919,7 @@ void vConfigFormatFactory( void ){
 	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
 	bzero(RoutingTable,ROUTING_TABLE_SIZE);
 	bzero(HoldingRegister,HOLDING_REGISTER_SIZE);
-	HoldingRegister[NodeID] = 150;//xxx
+	HoldingRegister[NodeID] = 152;//xxx
 	HoldingRegister[BaudaRate] = DEFAULT_BR;
 	vConfigSetNVS(HoldingRegister,"HoldingRegister");
 	vConfigSetNVS(RoutingTable,"RoutingTable");
