@@ -1,7 +1,7 @@
 # Node_espnow
 This is a code construction of a Mesh espnow node that use MODBUS RTU
 
-![](https://github.com/actions/Node_espnow/workflows/C%2FC%2B%2B%20CI/badge.svg)
+![](https://github.com/AdrianVazquezMejia/Node_espnow/workflows/C/badge.svg)
 
 # Description
 
