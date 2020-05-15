@@ -387,6 +387,7 @@ void espnow_send(void *pvParameter){
     		send_param->dir = BACKWARD;
     	}
     	else {
+    		if (des_node == 0) continue; //No route
     	   	posicion = ESP_NOW_ETH_ALEN * des_node;
     		memcpy(send_param->dest_mac, PeerTable + posicion,ESP_NOW_ETH_ALEN);
     		ESP_LOGI(TAG, "ITS FOR NODE %d with MAC: "MACSTR"", des_node, MAC2STR(send_param->dest_mac));
@@ -456,7 +457,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 	INT_VAL CRC;
 	Value.byte.HB = data.data[4];
 	Value.byte.LB = data.data[5];
-	uint16_t offset = 256;
+	const uint16_t offset = 256;
 
 	if (CRC16(data.data,data.len) == 0){
 		vNotiUart();
@@ -500,7 +501,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 						UARTinit(HoldingRAM[BaudaRate]);
 				 }
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
-				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE);
+				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE-offset);
 				 ESP_LOGI(TAG,"Saved in RAM");
 				 if (dir == ESP_NOW){
 					 data.dir = BACKWARD;
@@ -511,7 +512,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				 break;
 			case SAVE_FLASH:
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
-				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE);
+				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE-offset);
 				 vConfigSetNVS(RoutingTable,"RoutingTable");
 				 vConfigSetNVS(HoldingRegister,"HoldingRegister");
 				 ESP_LOGI(TAG,"Saved in FLASH");
