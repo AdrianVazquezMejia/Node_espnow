@@ -1,12 +1,15 @@
 # Node_espnow
-This is clean code construction of a Mesh espnow node that use MODBUS RTU
-#Description
+This is a code construction of a Mesh espnow node that use MODBUS RTU
+
+![](https://github.com/AdrianVazquezMejia/Node_espnow/workflows/C/badge.svg)
+
+# Description
 
 This is the source code of a Wi-Fi mesh's node based on ESP-32 MCU. This networks was designed to work along side Modbus
 RTU over serial line. Each node has a serial interface whicht is used to connect itself with Modbus devices and intergrate them 
 to the network.
 
-#Installation
+# Installation
 
 * Download a stable realase, I recommend `v3.0` using  `git clonehttps://github.com/AdrianVazquezMejia/Node_espnow.git`
 * Go to the folder `cd ../Node_espnow`
@@ -15,7 +18,7 @@ to the network.
 * Flash the MCU `make flash`
 * Set to factory default keeping pressed BOOT button for 5 s.
 
-#License
+# License
 
 MIT License
 
