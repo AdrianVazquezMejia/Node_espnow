@@ -114,7 +114,11 @@ static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 static uint8_t back_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint16_t s_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
-
+inline void qSendPrepare(espnow_event_t *evt,esp_uart_data_t U_data){
+	evt->id = ESPNOW_SEND_CB;
+	evt->info.send_t.id = ESPNOW_TO_SEND;
+	evt->info.send_t.info.send_data = U_data;
+}
 static void espnow_deinit(espnow_send_param_t *send_param);
 static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 {
@@ -448,7 +452,7 @@ uint8_t uComDirection(uint8_t *Slave){
 	return -1;
 }
 
-void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
+void vConfigSetNode(esp_uart_data_t data, uint8_t dir){//xxx
 	uint8_t function = data.data[1];
 	INT_VAL Address;
 	Address.byte.HB = data.data[2];
@@ -458,6 +462,7 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 	Value.byte.HB = data.data[4];
 	Value.byte.LB = data.data[5];
 	const uint16_t offset = 256;
+	espnow_event_t evt;
 
 	if (CRC16(data.data,data.len) == 0){
 		vNotiUart();
@@ -473,7 +478,8 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			ESP_LOGI(TAG, "Modifying Holding Register, Value %d  position %d \n",HoldingRAM[Address.Val],Address.Val);
 			if (dir == ESP_NOW){
 				data.dir = BACKWARD;
-				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+				qSendPrepare(&evt,data);
+				xQueueSend(espnow_queue, &evt, portMAX_DELAY);
 			}
 			else
 			uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
@@ -486,7 +492,8 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 					printf("Restarting \n");
 					if (dir == ESP_NOW){
 						data.dir = BACKWARD;
-						xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+						qSendPrepare(&evt,data);
+						xQueueSend(espnow_queue, &evt, portMAX_DELAY);
 					}
 					else
 					uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
@@ -505,7 +512,8 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				 ESP_LOGI(TAG,"Saved in RAM");
 				 if (dir == ESP_NOW){
 					 data.dir = BACKWARD;
-					 xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+						qSendPrepare(&evt,data);
+						xQueueSend(espnow_queue, &evt, portMAX_DELAY);
 				 }
 				 else
 					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
@@ -518,7 +526,8 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 				 ESP_LOGI(TAG,"Saved in FLASH");
 				 if (dir == ESP_NOW){
 					data.dir = BACKWARD;
-					xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+					qSendPrepare(&evt,data);
+					xQueueSend(espnow_queue, &evt, portMAX_DELAY);
 				 }
 				 else
 					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
@@ -543,7 +552,8 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			data.len= ++inc;
 			if (dir == ESP_NOW){
 				data.dir = BACKWARD;
-				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+				qSendPrepare(&evt,data);
+				xQueueSend(espnow_queue, &evt, portMAX_DELAY);
 			}
 			else
 				uart_write_bytes(UART_NUM_1,(const char*)data.data, data.len);
@@ -556,7 +566,8 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 			data.data[4] = CRC.byte.HB;
 			if (dir == ESP_NOW){
 				data.dir = BACKWARD;
-				xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+				qSendPrepare(&evt,data);
+				xQueueSend(espnow_queue, &evt, portMAX_DELAY);
 			}
 			else
 				uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
@@ -571,7 +582,8 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 		data.data[4] = CRC.byte.HB;
 		if (dir == ESP_NOW){
 			data.dir = BACKWARD;
-			xQueueSend(espnow_Squeue, &data, portMAX_DELAY);
+			qSendPrepare(&evt,data);
+			xQueueSend(espnow_queue, &evt, portMAX_DELAY);
 		}
 		else
 			uart_write_bytes(UART_NUM_1,(const char*)data.data,5);
@@ -663,7 +675,7 @@ static void espnow_manage_task(void *pvParameter)
                     ESP_LOGI(TAG, "Receive %dth broadcast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 
                     /* If MAC address does not exist in peer list, add it to peer list. */
-                    if ((esp_now_is_peer_exist(recv_cb->mac_addr) == false)) {//xxx about to test
+                    if ((esp_now_is_peer_exist(recv_cb->mac_addr) == false)) {
                         esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
                         if (peer == NULL) {
                             ESP_LOGE(TAG, "Malloc peer information fail");
@@ -725,7 +737,7 @@ static void espnow_manage_task(void *pvParameter)
 							case JUMP:
 								U_data.dir = dir;
 								ESP_LOGI(TAG,"JUMP DIR %d: ", dir );
-								xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);//xxx
+								xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
 							}
 							break;
 							case BACKWARD:
@@ -738,7 +750,7 @@ static void espnow_manage_task(void *pvParameter)
 								else {
 									U_data.dir = dir;
 									ESP_LOGI(TAG,"JUMP BACK %d: ", dir );
-									xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);//xxx
+									xQueueSend(espnow_Squeue, &U_data, portMAX_DELAY);
 								};
 					}
 
@@ -834,7 +846,7 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 
 static void rx_task(void *arg){
     UARTinit(HoldingRegister[BaudaRate]);
-    uart_event_t event;
+    uart_event_t event;//xxx
     uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
     static const char *RX_TASK_TAG = "RX_TASK";
     esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
@@ -853,9 +865,7 @@ static void rx_task(void *arg){
                     ESP_LOGI(RX_TASK_TAG,"Data recivida id %x \n",dtmp[0]);
                     switch(info){
                     case EX_SLAVE:
-                    	evt.id = ESPNOW_SEND_CB;
-                    	evt.info.send_t.id = ESPNOW_TO_SEND;
-                    	evt.info.send_t.info.send_data = U_data;
+                    	qSendPrepare(&evt,U_data);
                     	xQueueSend(espnow_queue,&evt,(portTickType)portMAX_DELAY);
 						break;
                     case NODE:
