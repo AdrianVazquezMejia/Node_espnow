@@ -6,8 +6,7 @@ This is a code construction of a Mesh espnow node that use MODBUS RTU
 # Description
 
 This is the source code of a Wi-Fi mesh's node based on ESP-32 MCU. This networks was designed to work along side Modbus
-RTU over serial line. Each node has a serial interface whicht is used to connect itself with Modbus devices and intergrate them 
-to the network.
+RTU over serial line. Each node has a serial interface which is used to connect itself with Modbus devices and to integrate them into the network.
 
 # Installation
 
