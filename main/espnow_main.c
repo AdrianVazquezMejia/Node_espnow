@@ -83,9 +83,11 @@ static const int TX_BUF_SIZE = 1024;
 #define CTS_PIN   (19)
 
 #define NodeID 0
-#define DEFAULT_ID 255
 #define BaudaRate 1
-#define DEFAULT_BR 10 //115200
+#define Parity 2
+#define DEFAULT_ID 255
+#define DEFAULT_BR 5 //115200
+#define EVEN 2
 
 #define OFFSET	256
 
@@ -424,23 +426,25 @@ uint16_t uComGetTransData(int slave){
 	return -1;
 }
 
-void UARTinit(int BTid) {
+void UARTinit(int BTid, uint8_t parity) {
 	uart_driver_delete(UART_NUM_1);
-	int uart_baudarate = 115200;
-	uart_baudarate = UARTBaudaRate(BTid);
+	int uart_baudarate = UARTBaudaRate(BTid);
+	uint8_t stopbit;
+	stopbit= (parity==3 || parity ==2)? 1: 3;
+	ESP_LOGW(TAG, "Parity is %d con stopbits %d", parity, stopbit);
 	ESP_LOGI(TAG, "El baudarate is %d",uart_baudarate );
     const uart_config_t uart_config = {
         .baud_rate = uart_baudarate,
         .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
+        .parity = parity,
+        .stop_bits = stopbit,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
     };
     uart_param_config(UART_NUM_1, &uart_config);
     uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, RTS_PIN, CTS_PIN);
     uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2,  TX_BUF_SIZE * 2,  20, &uart1_queue, 0);
     uart_set_mode(UART_NUM_1, UART_MODE_RS485_HALF_DUPLEX);
-    }
+}
 
 uint8_t uComDirection(uint8_t *Slave){
 	if (HoldingRegister[NodeID] == *Slave){
@@ -503,9 +507,9 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){//xxx
 				}
 				break;
 			case SAVE_RAM:
-				 if (HoldingRegister[BaudaRate] != HoldingRAM[BaudaRate]){
+				 if ((HoldingRegister[BaudaRate] != HoldingRAM[BaudaRate])||(HoldingRegister[Parity] != HoldingRAM[Parity])){//xxx
 						vTaskDelay(500);
-						UARTinit(HoldingRAM[BaudaRate]);
+						UARTinit(HoldingRAM[BaudaRate], HoldingRAM[Parity]);
 				 }
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
 				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE-offset);
@@ -845,7 +849,7 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 }
 
 static void rx_task(void *arg){
-    UARTinit(HoldingRegister[BaudaRate]);
+    UARTinit(HoldingRegister[BaudaRate], HoldingRegister[Parity]);
     uart_event_t event;//xxx
     uint8_t* dtmp = (uint8_t*) malloc(RX_BUF_SIZE);
     static const char *RX_TASK_TAG = "RX_TASK";
@@ -909,7 +913,7 @@ static void rx_task(void *arg){
 
 void vConfigLoad(){
 	HoldingRegister[NodeID]= DEFAULT_ID;
-	HoldingRegister[BaudaRate]= DEFAULT_BR;
+	HoldingRegister[BaudaRate]= DEFAULT_BR;//xxx
 	vConfigGetNVS(HoldingRegister,"HoldingRegister");
 	vConfigGetNVS(RoutingTable,"RoutingTable");
 	vConfigGetNVS(PeerTable,"PeerTable");
@@ -919,12 +923,12 @@ void vConfigLoad(){
 
 
 void vConfigFormatFactory( void ){
-
 	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
 	bzero(RoutingTable,ROUTING_TABLE_SIZE);
 	bzero(HoldingRegister,HOLDING_REGISTER_SIZE);
 	HoldingRegister[NodeID] = DEFAULT_ID;
 	HoldingRegister[BaudaRate] = DEFAULT_BR;
+	HoldingRegister[Parity] = EVEN;
 	vConfigSetNVS(HoldingRegister,"HoldingRegister");
 	vConfigSetNVS(RoutingTable,"RoutingTable");
 	vConfigSetNVS(PeerTable,"PeerTable");
