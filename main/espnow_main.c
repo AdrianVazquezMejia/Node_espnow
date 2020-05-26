@@ -40,6 +40,7 @@ Se usan tareas para UART y para la función ESPnow, las colas se usan para pasar
 Este código funciona si el maestro MODBUS está conectado o es esclavo.
 */
 #include <stdlib.h>
+
 #include <time.h>
 #include <string.h>
 #include <assert.h>
@@ -66,7 +67,7 @@ Este código funciona si el maestro MODBUS está conectado o es esclavo.
 #include "driver/gpio.h"
 #include "uart_func.h"
 #include "hdr/storage.h"
-
+#include "hdr/test.h"
 
 
 
@@ -96,7 +97,7 @@ static const int TX_BUF_SIZE = 1024;
 #define ESP_INTR_FLAG_DEFAULT 0
 
 static const char *TAG = "espnow";
-static const char *TAG_MB = "espnow";
+static const char *TAG_MB = "Modbus";
 
  //Queue definitions
 
@@ -507,6 +508,11 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){//xxx
 				}
 				break;
 			case SAVE_RAM:
+				if(!testParity(HoldingRAM[Parity])){
+					ESP_LOGW(TAG_MB, "You are entering a invalid value. Parity %d", HoldingRAM[Parity]);
+					ESP_LOGW(TAG_MB, "Valid values are : 0 None, 2 Even, 3 Odd");
+					break;
+				}
 				 if ((HoldingRegister[BaudaRate] != HoldingRAM[BaudaRate])||(HoldingRegister[Parity] != HoldingRAM[Parity])){//xxx
 						vTaskDelay(500);
 						UARTinit(HoldingRAM[BaudaRate], HoldingRAM[Parity]);
@@ -523,6 +529,11 @@ void vConfigSetNode(esp_uart_data_t data, uint8_t dir){//xxx
 					 uart_write_bytes(UART_NUM_1,(const char*)data.data,data.len);
 				 break;
 			case SAVE_FLASH:
+				if(!testParity(HoldingRAM[Parity])){
+					ESP_LOGW(TAG_MB, "You are entering a invalid value. Parity %d", HoldingRAM[Parity]);
+					ESP_LOGW(TAG_MB, "Valid values are : 0 None, 2 Even, 3 Odd");
+					break;
+				}
 				 memcpy(HoldingRegister,HoldingRAM,HOLDING_REGISTER_SIZE);
 				 memcpy(RoutingTable,HoldingRAM + offset,ROUTING_TABLE_SIZE-offset);
 				 vConfigSetNVS(RoutingTable,"RoutingTable");
