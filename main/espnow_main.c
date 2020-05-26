@@ -158,7 +158,6 @@ static void wifi_init(void)
 }
 void vConfigGetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
-
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
     if (err != ESP_OK) {
         printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
@@ -178,9 +177,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 			size_data =PEER_TABLE_SIZE * ESP_NOW_ETH_ALEN;
 			}
 		switch(sw){
-
 			case 1:
-
 				err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
 					switch (err) {
 						case ESP_OK:
@@ -195,8 +192,6 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 					break;
 
 			case 2:
-
-
 			err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
 			switch (err) {
 				case ESP_OK:
@@ -208,7 +203,6 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 					printf("Error (%s) reading!\n", esp_err_to_name(err));
 			}
 			break;
-
 			case 3:
 			err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
 			switch (err) {
@@ -225,7 +219,6 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 		nvs_close(nvshandle);
     }
 }
-
 void vConfigSetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
@@ -244,7 +237,6 @@ void vConfigSetNVS(uint8_t *Array , const char *Name){
     	size_data = PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN;
         }
     switch(sw){
-
     	case 1:
 	        err = nvs_set_blob(nvshandle, "HoldingRegister", Array,size_data);
 		    break;
@@ -252,7 +244,6 @@ void vConfigSetNVS(uint8_t *Array , const char *Name){
 		case 2:
 	        err = nvs_set_blob(nvshandle, "RoutingTable", Array,size_data);
 	        break;
-
 		case 3:
 	        err = nvs_set_blob(nvshandle, "PeerTable", Array,size_data);
 	        break;
@@ -260,7 +251,6 @@ void vConfigSetNVS(uint8_t *Array , const char *Name){
 				printf("Error (%s) reading!\n", esp_err_to_name(err));
 				break;
     }
-
     err = nvs_commit(nvshandle);
     nvs_close(nvshandle);
 }
@@ -286,7 +276,6 @@ static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len
 {
     espnow_event_t evt;
     espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
-
     if (mac_addr == NULL || data == NULL || len <= 0) {
         ESP_LOGE(TAG, "Receive cb arg error");
         return;
@@ -457,7 +446,7 @@ uint8_t uComDirection(uint8_t *Slave){
 	return -1;
 }
 
-void vConfigSetNode(esp_uart_data_t data, uint8_t dir){//xxx
+void vConfigSetNode(esp_uart_data_t data, uint8_t dir){
 	uint8_t function = data.data[1];
 	INT_VAL Address;
 	Address.byte.HB = data.data[2];
