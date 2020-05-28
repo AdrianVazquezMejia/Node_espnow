@@ -153,76 +153,6 @@ static void wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
 #endif
 }
-void vConfigGetNVS(uint8_t *Array , const char *Name){
-    esp_err_t err = nvs_flash_init();
-
-	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
-    if (err != ESP_OK) {
-        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-    } else {
-		size_t size_data = 0;
-		int sw = 0;
-		if(strcmp(Name, "HoldingRegister") == 0){
-			sw = 1;
-			size_data = HOLDING_REGISTER_SIZE;
-		}
-		if(strcmp(Name, "RoutingTable") == 0){
-			sw = 2;
-			size_data =ROUTING_TABLE_SIZE;
-		}
-		if(strcmp(Name, "PeerTable") == 0){
-			sw = 3;
-			size_data =PEER_TABLE_SIZE * ESP_NOW_ETH_ALEN;
-			}
-		switch(sw){
-
-			case 1:
-
-				err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
-					switch (err) {
-						case ESP_OK:
-							printf("Holding reading success\n");
-							break;
-						case ESP_ERR_NVS_NOT_FOUND:
-							printf("The value is not initialized yet!\n");
-							break;
-						default :
-							printf("Error (%s) reading!\n", esp_err_to_name(err));
-					}
-					break;
-
-			case 2:
-
-
-			err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
-			switch (err) {
-				case ESP_OK:
-					break;
-				case ESP_ERR_NVS_NOT_FOUND:
-					printf("The RT is not initialized yet!\n");
-					break;
-				default :
-					printf("Error (%s) reading!\n", esp_err_to_name(err));
-			}
-			break;
-
-			case 3:
-			err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
-			switch (err) {
-				case ESP_OK:
-					break;
-				case ESP_ERR_NVS_NOT_FOUND:
-					printf("The Peer Table is not initialized yet!\n");
-					break;
-				default :
-					printf("Error (%s) reading!\n", esp_err_to_name(err));
-			}
-			break;
-		}
-		nvs_close(nvshandle);
-    }
-}
-
 void vConfigSetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
@@ -278,6 +208,88 @@ static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status
         ESP_LOGW(TAG, "Send send queue fail");
     }
 }
+void vConfigFormatFactory( void ){
+	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
+	bzero(RoutingTable,ROUTING_TABLE_SIZE);
+	bzero(HoldingRegister,HOLDING_REGISTER_SIZE);
+	HoldingRegister[NodeID] = DEFAULT_ID;
+	HoldingRegister[BaudaRate] = DEFAULT_BR;
+	vConfigSetNVS(HoldingRegister,"HoldingRegister");
+	vConfigSetNVS(RoutingTable,"RoutingTable");
+	vConfigSetNVS(PeerTable,"PeerTable");
+}
+void vConfigGetNVS(uint8_t *Array , const char *Name){
+    esp_err_t err = nvs_flash_init();
+
+	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
+    if (err != ESP_OK) {
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+    } else {
+		size_t size_data = 0;
+		int sw = 0;
+		if(strcmp(Name, "HoldingRegister") == 0){
+			sw = 1;
+			size_data = HOLDING_REGISTER_SIZE;
+		}
+		if(strcmp(Name, "RoutingTable") == 0){
+			sw = 2;
+			size_data =ROUTING_TABLE_SIZE;
+		}
+		if(strcmp(Name, "PeerTable") == 0){
+			sw = 3;
+			size_data =PEER_TABLE_SIZE * ESP_NOW_ETH_ALEN;
+			}
+		switch(sw){
+
+			case 1:
+
+				err = nvs_get_blob(nvshandle, "HoldingRegister", Array, &size_data);
+					switch (err) {
+						case ESP_OK:
+							printf("Holding reading success\n");
+							break;
+						case ESP_ERR_NVS_NOT_FOUND://xxx
+							printf("The value is not initialized yet!\n");
+							vConfigFormatFactory();
+							break;
+						default :
+							printf("Error (%s) reading!\n", esp_err_to_name(err));
+					}
+					break;
+
+			case 2:
+
+
+			err = nvs_get_blob(nvshandle, "RoutingTable",Array, &size_data);
+			switch (err) {
+				case ESP_OK:
+					break;
+				case ESP_ERR_NVS_NOT_FOUND:
+					printf("The RT is not initialized yet!\n");
+					break;
+				default :
+					printf("Error (%s) reading!\n", esp_err_to_name(err));
+			}
+			break;
+
+			case 3:
+			err = nvs_get_blob(nvshandle, "PeerTable",Array, &size_data);
+			switch (err) {
+				case ESP_OK:
+					break;
+				case ESP_ERR_NVS_NOT_FOUND:
+					printf("The Peer Table is not initialized yet!\n");
+					break;
+				default :
+					printf("Error (%s) reading!\n", esp_err_to_name(err));
+			}
+			break;
+		}
+		nvs_close(nvshandle);
+    }
+}
+
+
 
 static void espnow_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len)
 {
@@ -918,17 +930,7 @@ void vConfigLoad(){
 }
 
 
-void vConfigFormatFactory( void ){
 
-	memset(PeerTable,0xff,PEER_TABLE_SIZE*ESP_NOW_ETH_ALEN);
-	bzero(RoutingTable,ROUTING_TABLE_SIZE);
-	bzero(HoldingRegister,HOLDING_REGISTER_SIZE);
-	HoldingRegister[NodeID] = DEFAULT_ID;
-	HoldingRegister[BaudaRate] = DEFAULT_BR;
-	vConfigSetNVS(HoldingRegister,"HoldingRegister");
-	vConfigSetNVS(RoutingTable,"RoutingTable");
-	vConfigSetNVS(PeerTable,"PeerTable");
-}
 
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
