@@ -219,6 +219,7 @@ void vConfigGetNVS(uint8_t *Array , const char *Name){
 		nvs_close(nvshandle);
     }
 }
+
 void vConfigSetNVS(uint8_t *Array , const char *Name){
     esp_err_t err = nvs_flash_init();
 	err = nvs_open("storage", NVS_READWRITE, &nvshandle);
