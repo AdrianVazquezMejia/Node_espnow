@@ -17,6 +17,9 @@ RTU over serial line. Each node has a serial interface which is used to connect 
 * Flash the MCU `make flash`
 * Set to factory default keeping pressed BOOT button for 5 s.
 
+# Documentation
+
+Full Spanish Documentation is avialable ![here](https://github.com/AdrianVazquezMejia/TEG/blob/master/EIETdeG.pdf)
 # License
 
 MIT License
