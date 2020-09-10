@@ -19,7 +19,7 @@ RTU over serial line. Each node has a serial interface which is used to connect 
 
 # Documentation
 
-Full Spanish Documentation is avialable [here](https://github.com/AdrianVazquezMejia/TEG/blob/master/EIETdeG.pdf)
+Full Spanish Documentation is available [here](https://github.com/AdrianVazquezMejia/TEG/blob/master/EIETdeG.pdf)
 # License
 
 MIT License
